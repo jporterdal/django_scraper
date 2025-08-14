@@ -1,0 +1,3 @@
+[submodule "search_scrape"]
+	path = search_scrape
+	url = https://github.com/jporterdal/search-scrape.git
