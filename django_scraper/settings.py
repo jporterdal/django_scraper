@@ -108,7 +108,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = "America/Halifax"
 
 USE_I18N = True
 
@@ -124,3 +124,34 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Scraping / rate limiting
+SCRAPE_REQUEST_DELAY_SECONDS = env.float("SCRAPE_REQUEST_DELAY_SECONDS", default=3.0)
+SCRAPE_REQUEST_DELAY_JITTER_SECONDS = env.float(
+    "SCRAPE_REQUEST_DELAY_JITTER_SECONDS", default=1.0
+)
+SCRAPE_REQUEST_TIMEOUT_SECONDS = env.int("SCRAPE_REQUEST_TIMEOUT_SECONDS", default=30)
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "{levelname} {asctime} {name} {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+    },
+    "loggers": {
+        "tracking": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}

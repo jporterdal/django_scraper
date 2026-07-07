@@ -1,11 +1,12 @@
 from django.contrib import messages
 from django.http import HttpResponse
 from django.views.generic import ListView, TemplateView
-from django.views.generic.edit import CreateView, UpdateView, View
+from django.views.generic.edit import CreateView, DeleteView, UpdateView, View
 from django.urls import reverse
-from django.db.models import Min, OuterRef, Subquery, F
+from django.db.models import Count, Min, OuterRef, Subquery, F
 from django.shortcuts import redirect
-from .models import ItemSource, SearchableItem, SearchResult, WebUpdate
+from django.utils import timezone
+from .models import ItemSource, SearchableItem, SearchResult, Source, Tag, WebUpdate
 from .parsers import CCSearchParser
 import json
 
@@ -17,9 +18,18 @@ def index(request):
 
 
 def poll(request):
-    parser = CCSearchParser("rtx 5070")
-    search_result = parser.search()
-    lp_output = ("\t".join(search_result.lowest_price()) + "\n")
+    try:
+        source = Source.objects.get(key="cc")
+    except Source.DoesNotExist:
+        return HttpResponse("No Canada Computers source configured.", status=500)
+
+    parser = CCSearchParser(term="rtx 5070")
+    search_url = source.build_search_url("rtx 5070")
+    from .fetcher import Fetcher
+    from .scrape import _run_parser_search
+
+    _run_parser_search(parser, Fetcher.from_settings(), search_url)
+    lp_output = "\t".join(parser.lowest_price()) + "\n"
 
     with open("found_prices.txt", "w") as f:
         f.writelines(lp_output)
@@ -37,7 +47,7 @@ class SearchableCreateView(CreateView):
 
 class SearchableUpdateView(UpdateView):
     model = SearchableItem
-    fields = ["text", "priority", "active"]
+    fields = ["text", "priority", "active", "tags"]
     template_name = "tracking/searchableitem_form.html"
 
     def get_success_url(self):
@@ -51,10 +61,15 @@ class SearchableListView(ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
 
-        sr = SearchResult.objects.values("update", "item").annotate(
-            lowest_price=Min("price"),
-            timestamp=F('update__timestamp'),
-        ).order_by('-timestamp')
+        sr = (
+            SearchResult.objects.filter(instock=1)
+            .values("update", "item")
+            .annotate(
+                lowest_price=Min("price"),
+                timestamp=F("update__timestamp"),
+            )
+            .order_by("-timestamp")
+        )
 
         # A bit over-engineered but avoids quadratic/worse costs in case we end up with a lot of item IDs
         item_ids = set([r['item'] for r in sr])  # O(n)
@@ -67,34 +82,118 @@ class SearchableListView(ListView):
             except IndexError:
                 break
             timestamp = item['timestamp']
+            if timestamp:
+                local_ts = timezone.localtime(timestamp)
+                date_str = local_ts.strftime("%d/%m/%y")
+            else:
+                date_str = ""
             forjson[item['id']]['price_history'].append({
                 'price': item['lowest_price'],
-                'date': timestamp.strftime("%d/%m/%y") if timestamp else "",
+                'date': date_str,
             })
 
         context['items_json'] = json.dumps(list(forjson.values()))
+        context["tags"] = Tag.objects.all()
+        context["active_tag_id"] = self.request.GET.get("tag", "")
 
         return context
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        queryset = super().get_queryset().prefetch_related("tags")
+        tag_id = self.request.GET.get("tag")
+        if tag_id:
+            queryset = queryset.filter(tags__id=tag_id).distinct()
         latest_update_id = (
             WebUpdate.objects.order_by('-timestamp').values_list('pk', flat=True).first()
         )
         if latest_update_id is None:
             return queryset
 
-        subq = SearchResult.objects.filter(
-            item=OuterRef('id'),
+        cheapest = SearchResult.objects.filter(
+            item=OuterRef("id"),
             update_id=latest_update_id,
-            price=Min('price'),
-        )
+            instock=1,
+        ).order_by("price")
 
         return queryset.annotate(
-            latest_minprice=Subquery(subq.values("price")[:1]),
-            latest_minprice_title=Subquery(subq.values("title")[:1]),
-            latest_minprice_timestamp=Subquery(subq.values("update__timestamp")[:1]),
+            latest_minprice=Subquery(cheapest.values("price")[:1]),
+            latest_minprice_title=Subquery(cheapest.values("title")[:1]),
+            latest_minprice_timestamp=Subquery(cheapest.values("update__timestamp")[:1]),
         )
+
+
+class TagListView(ListView):
+    model = Tag
+    template_name = "tracking/tag_list.html"
+    context_object_name = "tags"
+
+    def get_queryset(self):
+        return Tag.objects.annotate(item_count=Count("items"))
+
+
+class TagCreateView(CreateView):
+    model = Tag
+    fields = ["name", "color"]
+    template_name = "tracking/tag_form.html"
+
+    def get_success_url(self):
+        messages.success(self.request, f"Tag “{self.object.name}” created.")
+        return reverse("view_tags")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["form_title"] = "Add Tag"
+        context["submit_label"] = "Add Tag"
+        return context
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        form.fields["name"].widget.attrs.update({"class": "form-control"})
+        form.fields["color"].widget.attrs.update({
+            "class": "form-control",
+            "placeholder": "#3498db",
+        })
+        return form
+
+
+class TagUpdateView(UpdateView):
+    model = Tag
+    fields = ["name", "color"]
+    template_name = "tracking/tag_form.html"
+
+    def get_success_url(self):
+        messages.success(self.request, f"Tag “{self.object.name}” updated.")
+        return reverse("view_tags")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["form_title"] = "Edit Tag"
+        context["submit_label"] = "Save Changes"
+        return context
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        form.fields["name"].widget.attrs.update({"class": "form-control"})
+        form.fields["color"].widget.attrs.update({
+            "class": "form-control",
+            "placeholder": "#3498db",
+        })
+        return form
+
+
+class TagDeleteView(DeleteView):
+    model = Tag
+    template_name = "tracking/tag_confirm_delete.html"
+    context_object_name = "tag"
+
+    def get_success_url(self):
+        messages.success(self.request, f"Tag “{self.object.name}” deleted.")
+        return reverse("view_tags")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["item_count"] = self.object.items.count()
+        return context
 
 
 class UpdateFromWebView(View):
@@ -136,12 +235,20 @@ class UpdateFromWebView(View):
             )
             return redirect("view_terms")
 
-        result_count = SearchResult.update_from_web(items=items)
+        stats = SearchResult.update_from_web(items=items)
 
-        if result_count:
-            messages.success(
+        if stats.result_count:
+            message = (
+                f"Stored {stats.result_count} price result(s) from "
+                f"{item_count} item(s)."
+            )
+            if stats.error_count:
+                message += f" {stats.error_count} search(es) failed — see server logs."
+            messages.success(request, message)
+        elif stats.error_count:
+            messages.error(
                 request,
-                f"Stored {result_count} price result(s) from {item_count} item(s).",
+                f"All {stats.error_count} search(es) failed — see server logs.",
             )
         else:
             messages.warning(

@@ -1,5 +1,4 @@
 import re
-from urllib import parse
 from search_scrape.search_scrape import SearchParser
 import logging
 
@@ -9,12 +8,6 @@ logger = logging.getLogger(__name__)
 class CCSearchParser(SearchParser):
     def _init_vars(self):
         super()._init_vars()
-        self.url = "https://www.canada" + "computers.com/en/search?s=" + parse.quote_plus(self.term) + "&pickup=62"
-        self.title_patterns.extend([
-            "msi.*" + self.term.lower() + ".*",
-            "asus.*" + self.term.lower() + ".*",
-            "gigabyte.*" + self.term.lower() + ".*",
-        ])
 
     def check_within_item_object(self, element):
         return element.tag == "div" and element.is_class("product")
