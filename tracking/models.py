@@ -123,10 +123,10 @@ class SearchResult(models.Model):
 
 
     @classmethod
-    def update_from_web(cls):
-        active_searches = ItemSource.objects.filter(
-            item__active=True,
-        )
+    def update_from_web(cls, items=None):
+        active_searches = ItemSource.objects.filter(item__active=True)
+        if items is not None:
+            active_searches = active_searches.filter(item__in=items)
         kws, webupdate = [], None
 
         for act in active_searches:

@@ -1,0 +1,9 @@
+asgiref==3.11.1
+certifi==2025.8.3
+charset-normalizer==3.4.2
+Django==6.0.6
+django-environ==0.14.0
+idna==3.10
+requests==2.32.4
+sqlparse==0.5.5
+urllib3==2.5.0

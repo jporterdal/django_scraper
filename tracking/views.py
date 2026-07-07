@@ -1,11 +1,11 @@
-from django.shortcuts import render
+from django.contrib import messages
 from django.http import HttpResponse
-from django.views.generic import ListView
-from django.views.generic.edit import CreateView, DeleteView, UpdateView, View
+from django.views.generic import ListView, TemplateView
+from django.views.generic.edit import CreateView, UpdateView, View
 from django.urls import reverse
-from django.db.models import Min, Max, OuterRef, Subquery, F
+from django.db.models import Min, OuterRef, Subquery, F
 from django.shortcuts import redirect
-from .models import SearchableItem, SearchResult, WebUpdate
+from .models import ItemSource, SearchableItem, SearchResult, WebUpdate
 from .parsers import CCSearchParser
 import json
 
@@ -13,7 +13,7 @@ import json
 # Create your views here.
 
 def index(request):
-    return HttpResponse("Hello world.")
+    return redirect("view_terms")
 
 
 def poll(request):
@@ -29,15 +29,27 @@ def poll(request):
 class SearchableCreateView(CreateView):
     model = SearchableItem
     fields = ["text"]
+    template_name = "tracking/searchableitem_form.html"
+
     def get_success_url(self):
-        return reverse('view_terms')
+        return reverse("view_terms")
+
+
+class SearchableUpdateView(UpdateView):
+    model = SearchableItem
+    fields = ["text", "priority", "active"]
+    template_name = "tracking/searchableitem_form.html"
+
+    def get_success_url(self):
+        return reverse("view_terms")
 
 
 class SearchableListView(ListView):
+    # Template searchableitem_list.html
     model = SearchableItem
 
-    def get_context_data(self):
-        context = super().get_context_data()
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
 
         sr = SearchResult.objects.values("update", "item").annotate(
             lowest_price=Min("price"),
@@ -54,45 +66,98 @@ class SearchableListView(ListView):
                 item = srlist.pop()
             except IndexError:
                 break
-            forjson[item['id']]['price_history'].append(
-                {'price': item['lowest_price'],
-                 'date': item['timestamp'].strftime("%d/%m/%y")
-                 }
-            )
+            timestamp = item['timestamp']
+            forjson[item['id']]['price_history'].append({
+                'price': item['lowest_price'],
+                'date': timestamp.strftime("%d/%m/%y") if timestamp else "",
+            })
 
         context['items_json'] = json.dumps(list(forjson.values()))
-        print(context['items_json'])
 
         return context
 
-
     def get_queryset(self):
-        latest_update = WebUpdate.objects.filter(timestamp=Max('timestamp'))
+        queryset = super().get_queryset()
+        latest_update_id = (
+            WebUpdate.objects.order_by('-timestamp').values_list('pk', flat=True).first()
+        )
+        if latest_update_id is None:
+            return queryset
+
         subq = SearchResult.objects.filter(
             item=OuterRef('id'),
-            update=latest_update.values("id")[:1],  # the [:1] notation keeps as QuerySet of length 1 rather than resolving to a dict
-            price=Min('price')
+            update_id=latest_update_id,
+            price=Min('price'),
         )
 
-        return super().get_queryset().annotate(
+        return queryset.annotate(
             latest_minprice=Subquery(subq.values("price")[:1]),
             latest_minprice_title=Subquery(subq.values("title")[:1]),
-            latest_minprice_timestamp=Subquery(subq.values("update__timestamp")[:1])
+            latest_minprice_timestamp=Subquery(subq.values("update__timestamp")[:1]),
         )
 
 
 class UpdateFromWebView(View):
     def get(self, request):
-        SearchResult.update_from_web()
+        return redirect("view_terms")
 
-        return redirect('view_terms')
+    def post(self, request):
+        mode = request.POST.get("mode")
+        items = None
 
-class UpdateScheduleCreateView(CreateView):
-    #model = UpdateSchedule
-    def get_success_url(self):
-        return reverse('view_updates')
+        if mode == "all":
+            pass
+        elif mode == "selected":
+            item_ids = request.POST.getlist("item_ids")
+            if not item_ids:
+                messages.warning(request, "No items selected.")
+                return redirect("view_terms")
+            items = SearchableItem.objects.filter(pk__in=item_ids, active=True)
+            if not items.exists():
+                messages.warning(
+                    request,
+                    "No active items in selection. Inactive items are skipped.",
+                )
+                return redirect("view_terms")
+        else:
+            messages.error(request, "Invalid update request.")
+            return redirect("view_terms")
+
+        search_count = ItemSource.objects.filter(item__active=True)
+        if items is not None:
+            search_count = search_count.filter(item__in=items)
+        item_count = search_count.values("item").distinct().count()
+
+        if item_count == 0:
+            messages.warning(
+                request,
+                "No items with configured sources to update. "
+                "Assign sources to active items first.",
+            )
+            return redirect("view_terms")
+
+        result_count = SearchResult.update_from_web(items=items)
+
+        if result_count:
+            messages.success(
+                request,
+                f"Stored {result_count} price result(s) from {item_count} item(s).",
+            )
+        else:
+            messages.warning(
+                request,
+                f"Update ran for {item_count} item(s) but no price data was returned.",
+            )
+
+        return redirect("view_terms")
+
+class UpdateScheduleCreateView(TemplateView):
+    """Placeholder until UpdateSchedule model is implemented."""
+    template_name = "tracking/updateschedule_form.html"
 
 
 class UpdateScheduleListView(ListView):
-    #model = UpdateSchedule
-    pass
+    """Show scrape-run history; empty after initial install until first /update/."""
+    model = WebUpdate
+    ordering = ["-timestamp"]
+    template_name = "tracking/webupdate_list.html"
