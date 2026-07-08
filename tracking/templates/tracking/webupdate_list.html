@@ -14,6 +14,8 @@
     <p class="text-center mb-4">
         <a href="{% url 'view_terms' %}">View Terms</a>
         &middot;
+        <a href="{% url 'view_schedules' %}">Schedules</a>
+        &middot;
         <form method="post" action="{% url 'update' %}" class="d-inline">
             {% csrf_token %}
             <button type="submit" name="mode" value="all" class="btn btn-link p-0 align-baseline">Run Update Now</button>

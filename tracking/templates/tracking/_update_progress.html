@@ -1,0 +1,51 @@
+{% comment %}
+HTMX progress partial for a background WebUpdate run. While PENDING/RUNNING it
+polls itself every 2s (swapping its own outerHTML); once DONE/FAILED it renders a
+final summary with no trigger, so polling stops.
+{% endcomment %}
+<div id="update-progress" class="card mb-4 border-info"
+     {% if update.status == 'pending' or update.status == 'running' %}
+     hx-get="{% url 'update_progress' update.pk %}"
+     hx-trigger="every 2s"
+     hx-swap="outerHTML"
+     {% endif %}>
+    <div class="card-body py-3">
+        {% if update.status == 'done' %}
+            <div class="d-flex justify-content-between align-items-center">
+                <span>
+                    <strong>Update complete.</strong>
+                    Stored {{ update.result_count }} price result(s) from
+                    {{ update.completed_searches }} search(es){% if update.error_count %},
+                    {{ update.error_count }} failed — see server logs{% endif %}.
+                </span>
+                <a href="{% url 'view_terms' %}" class="btn btn-sm btn-outline-success">Refresh table</a>
+            </div>
+        {% elif update.status == 'failed' %}
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="text-danger">
+                    <strong>Update failed.</strong>
+                    {{ update.completed_searches }} of {{ update.total_searches }} search(es) ran
+                    before the run stopped — see server logs.
+                </span>
+                <a href="{% url 'view_terms' %}" class="btn btn-sm btn-outline-danger">Reload</a>
+            </div>
+        {% else %}
+            <div class="d-flex justify-content-between mb-2">
+                <span>
+                    <span class="spinner-border spinner-border-sm text-info me-1" role="status" aria-hidden="true"></span>
+                    Updating prices… ({{ update.completed_searches }}/{{ update.total_searches }} searches)
+                </span>
+                <span class="text-muted">
+                    {{ update.result_count }} result(s), {{ update.error_count }} error(s)
+                </span>
+            </div>
+            <div class="progress" role="progressbar"
+                 aria-valuenow="{{ update.completed_searches }}"
+                 aria-valuemin="0" aria-valuemax="{{ update.total_searches }}">
+                <div class="progress-bar progress-bar-striped progress-bar-animated"
+                     style="width: {% widthratio update.completed_searches update.total_searches|default:1 100 %}%">
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>

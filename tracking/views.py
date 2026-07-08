@@ -1,17 +1,28 @@
 from django.contrib import messages
-from django.http import HttpResponse
-from django.views.generic import DetailView, ListView, TemplateView
+from django.http import HttpResponse, JsonResponse
+from django.views.generic import DetailView, ListView
 from django.views.generic.edit import CreateView, DeleteView, UpdateView, View
 from django.urls import reverse
 from django.db.models import Count, Min, OuterRef, Subquery, F
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
-from .forms import ItemSourceForm, SourceForm
+from .forms import ItemSourceForm, SourceForm, UpdateScheduleForm
 from .matching import result_matches_item_source
-from .models import FetchJob, ItemSource, SearchableItem, SearchResult, Source, Tag, WebUpdate
+from .models import (
+    FetchJob,
+    ItemSource,
+    SearchableItem,
+    SearchResult,
+    Source,
+    Tag,
+    UpdateSchedule,
+    WebUpdate,
+)
 from .parsers import CCSearchParser
 from .parsers import sources as parser_registry
+from .tasks import run_web_update_task
+import csv
 import json
 
 
@@ -444,10 +455,11 @@ class UpdateFromWebView(View):
             messages.error(request, "Invalid update request.")
             return redirect("view_terms")
 
-        search_count = ItemSource.objects.filter(item__active=True)
+        search_qs = ItemSource.objects.filter(item__active=True)
         if items is not None:
-            search_count = search_count.filter(item__in=items)
-        item_count = search_count.values("item").distinct().count()
+            search_qs = search_qs.filter(item__in=items)
+        item_count = search_qs.values("item").distinct().count()
+        total_searches = search_qs.count()
 
         if item_count == 0:
             messages.warning(
@@ -457,36 +469,168 @@ class UpdateFromWebView(View):
             )
             return redirect("view_terms")
 
-        stats = SearchResult.update_from_web(items=items)
+        # Create the WebUpdate up front so the progress UI has something to poll,
+        # then hand the run off to the background worker instead of blocking the
+        # request. Under immediate mode (dev/test) the task runs inline.
+        webupdate = WebUpdate.objects.create(
+            status=WebUpdate.Status.PENDING,
+            total_searches=total_searches,
+        )
 
-        if stats.result_count:
-            message = (
-                f"Stored {stats.result_count} price result(s) from "
-                f"{item_count} item(s)."
-            )
-            if stats.error_count:
-                message += f" {stats.error_count} search(es) failed — see server logs."
-            messages.success(request, message)
-        elif stats.error_count:
-            messages.error(
-                request,
-                f"All {stats.error_count} search(es) failed — see server logs.",
-            )
-        else:
-            messages.warning(
-                request,
-                f"Update ran for {item_count} item(s) but no price data was returned.",
-            )
+        item_ids = None
+        if items is not None:
+            item_ids = list(items.values_list("pk", flat=True))
 
-        return redirect("view_terms")
+        run_web_update_task(webupdate.pk, item_ids=item_ids)
 
-class UpdateScheduleCreateView(TemplateView):
-    """Placeholder until UpdateSchedule model is implemented."""
-    template_name = "tracking/updateschedule_form.html"
+        messages.info(
+            request,
+            f"Started a background price update for {item_count} item(s). "
+            "Progress is shown below.",
+        )
+        return redirect(f"{reverse('view_terms')}?update={webupdate.pk}")
+
+class UpdateProgressView(View):
+    """Return the HTMX progress partial for a background WebUpdate run.
+
+    The partial self-polls (`hx-get` + `hx-trigger="every 2s"`) while the run is
+    PENDING/RUNNING and stops polling once it reaches DONE/FAILED, swapping in a
+    final summary.
+    """
+
+    def get(self, request, pk):
+        webupdate = get_object_or_404(WebUpdate, pk=pk)
+        return render(
+            request,
+            "tracking/_update_progress.html",
+            {"update": webupdate},
+        )
 
 
-class UpdateScheduleListView(ListView):
-    """Show scrape-run history; empty after initial install until first /update/."""
+class WebUpdateListView(ListView):
+    """Scrape-run history: past WebUpdate rows (name ``view_updates``).
+
+    Unchanged behavior from the previous stub — kept as its own view so the
+    schedule CRUD views below can own the ``UpdateSchedule*`` names.
+    """
     model = WebUpdate
     ordering = ["-timestamp"]
     template_name = "tracking/webupdate_list.html"
+
+
+class UpdateScheduleListView(ListView):
+    model = UpdateSchedule
+    template_name = "tracking/updateschedule_list.html"
+    context_object_name = "schedules"
+
+
+class UpdateScheduleCreateView(CreateView):
+    model = UpdateSchedule
+    form_class = UpdateScheduleForm
+    template_name = "tracking/updateschedule_form.html"
+
+    def get_success_url(self):
+        messages.success(self.request, f"Schedule “{self.object.name}” created.")
+        return reverse("view_schedules")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["form_title"] = "Add Schedule"
+        context["submit_label"] = "Add Schedule"
+        return context
+
+
+class UpdateScheduleUpdateView(UpdateView):
+    model = UpdateSchedule
+    form_class = UpdateScheduleForm
+    template_name = "tracking/updateschedule_form.html"
+
+    def get_success_url(self):
+        messages.success(self.request, f"Schedule “{self.object.name}” updated.")
+        return reverse("view_schedules")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["form_title"] = "Edit Schedule"
+        context["submit_label"] = "Save Changes"
+        return context
+
+
+class UpdateScheduleDeleteView(DeleteView):
+    model = UpdateSchedule
+    template_name = "tracking/updateschedule_confirm_delete.html"
+    context_object_name = "schedule"
+
+    def get_success_url(self):
+        messages.success(self.request, f"Schedule “{self.object.name}” deleted.")
+        return reverse("view_schedules")
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 Step 6 — price-history export (CSV / JSON) per item.
+# ---------------------------------------------------------------------------
+
+# Column order shared by the CSV header and the JSON object keys so the two
+# formats stay in lockstep.
+EXPORT_FIELDNAMES = [
+    "source",
+    "search_term",
+    "title",
+    "price",
+    "instock",
+    "category",
+    "timestamp",
+]
+
+
+def _item_export_rows(item):
+    """Yield one ordered dict-like row per ``SearchResult`` for ``item``.
+
+    Rows are ordered deterministically (newest update first, then source key,
+    then price) and the FK-heavy columns are loaded via ``select_related`` to
+    avoid N+1 queries. Timestamps are localized to ``settings.TIME_ZONE``.
+    """
+    results = (
+        SearchResult.objects.filter(item=item)
+        .select_related("source", "update")
+        .order_by("-update__timestamp", "source__key", "price")
+    )
+    rows = []
+    for r in results:
+        ts = r.update.timestamp
+        rows.append({
+            "source": r.source.key,
+            "search_term": r.search_term,
+            "title": r.title,
+            "price": r.price,
+            "instock": r.instock,
+            "category": r.category or "",
+            "timestamp": timezone.localtime(ts).isoformat() if ts else "",
+        })
+    return rows
+
+
+def _export_filename(item, extension):
+    return f"item-{item.pk}-price-history.{extension}"
+
+
+def export_item_csv(request, pk):
+    item = get_object_or_404(SearchableItem, pk=pk)
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = (
+        f'attachment; filename="{_export_filename(item, "csv")}"'
+    )
+    writer = csv.DictWriter(response, fieldnames=EXPORT_FIELDNAMES)
+    writer.writeheader()
+    for row in _item_export_rows(item):
+        writer.writerow(row)
+    return response
+
+
+def export_item_json(request, pk):
+    item = get_object_or_404(SearchableItem, pk=pk)
+    response = JsonResponse(_item_export_rows(item), safe=False)
+    response["Content-Disposition"] = (
+        f'attachment; filename="{_export_filename(item, "json")}"'
+    )
+    return response

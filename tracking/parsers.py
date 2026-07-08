@@ -1,4 +1,5 @@
 import re
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from search_scrape.search_scrape import SearchParser
 import logging
 
@@ -21,6 +22,17 @@ class JSONSearchParser:
         self._init_vars()
         self.parse_data(response.json())
 
+    def parse_next_page(self, response):
+        """Parse an additional page, appending to self.results without resetting."""
+        self.parse_data(response.json())
+
+    def next_page_url(self, response, current_url, page_number):
+        """Return the URL of the next page, or None when there is no next page.
+
+        Default is single-page (no pagination); JSON subclasses override.
+        """
+        return None
+
     def parse_data(self, data):
         raise NotImplementedError
 
@@ -38,6 +50,14 @@ class HTMLResponseParserMixin:
     def parse_response(self, response):
         self._init_vars()
         self.feed(response.text)
+
+    def parse_next_page(self, response):
+        """Feed an additional page without resetting parser state."""
+        self.feed(response.text)
+
+    def next_page_url(self, response, current_url, page_number):
+        """HTML parsers stay single-page."""
+        return None
 
 
 class CCSearchParser(HTMLResponseParserMixin, SearchParser):
@@ -115,6 +135,23 @@ class ShopifyParser(JSONSearchParser):
                     category=category,
                 )
 
+    def next_page_url(self, response, current_url, page_number):
+        """Increment the ``/page/{n}/`` segment until a page returns no hits."""
+        data = response.json()
+        if not data.get("hits", {}).get("hits", []):
+            return None
+
+        def _bump(match):
+            return f"{match.group(1)}{int(match.group(2)) + 1}"
+
+        new_url, replacements = re.subn(r"(/page/)(\d+)", _bump, current_url)
+        if replacements == 0:
+            logger.warning(
+                "ShopifyParser.next_page_url: no /page/N/ segment in %s", current_url
+            )
+            return None
+        return new_url
+
 
 class StorepassParser(JSONSearchParser):
     """Storepass SaaS JSON search results."""
@@ -133,6 +170,27 @@ class StorepassParser(JSONSearchParser):
                     instock=variant.get("inventory_quantity", 0) > 0,
                     category=category,
                 )
+
+    def next_page_url(self, response, current_url, page_number):
+        """Storepass reports ``current_page`` and total ``pages`` in the body.
+
+        When another page exists, set/replace the ``page`` query parameter on the
+        base search URL. (The fixture uses ``current_page``/``pages``; Storepass docs
+        also mention ``nextPageParameters``, absent from the observed payload.)
+        """
+        data = response.json()
+        pages = data.get("pages")
+        current_page = data.get("current_page")
+        if not isinstance(pages, int) or not isinstance(current_page, int):
+            return None
+        if current_page >= pages:
+            return None
+
+        parsed = urlparse(current_url)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        query["page"] = [str(current_page + 1)]
+        new_query = urlencode(query, doseq=True)
+        return urlunparse(parsed._replace(query=new_query))
 
 
 sources = {'cc': CCSearchParser, 'shopify': ShopifyParser, 'storepass': StorepassParser}

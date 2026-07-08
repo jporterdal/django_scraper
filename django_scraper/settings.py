@@ -21,7 +21,7 @@ env = environ.Env(
 )
 
 SITE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-environ.Env.read_env(os.path.join(SITE_ROOT, ".env_sample"))  # Use ".env" if moving to prod
+environ.Env.read_env(os.path.join(SITE_ROOT, ".env"))
 
 DEBUG = env("DEBUG")
 SECRET_KEY = env.str("SECRET_KEY")
@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'huey.contrib.djhuey',
     'tracking',
 ]
 
@@ -75,12 +76,18 @@ WSGI_APPLICATION = 'django_scraper.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+#
+# Env-driven via django-environ's DB-URL support. The default keeps the local
+# SQLite file (dev/test), so the suite runs with no DATABASE_URL, no Postgres,
+# and no network. Point at Postgres in production by setting DATABASE_URL, e.g.
+# ``DATABASE_URL=postgres://user:pass@host:5432/dbname`` (needs psycopg,
+# already in requirements.txt). See docs/postgres_migration.md.
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    "default": env.db_url(
+        "DATABASE_URL",
+        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
+    )
 }
 
 
@@ -131,6 +138,29 @@ SCRAPE_REQUEST_DELAY_JITTER_SECONDS = env.float(
     "SCRAPE_REQUEST_DELAY_JITTER_SECONDS", default=1.0
 )
 SCRAPE_REQUEST_TIMEOUT_SECONDS = env.int("SCRAPE_REQUEST_TIMEOUT_SECONDS", default=30)
+# Maximum size (in bytes) of a single search response before it is rejected as
+# oversized. Guards against huge JSON payloads (e.g. large Storepass responses).
+# Set to 0 (or leave unset with default) to disable the cap; 0/None = unlimited.
+SCRAPE_MAX_RESPONSE_BYTES = env.int("SCRAPE_MAX_RESPONSE_BYTES", default=8_000_000)
+
+# Background tasks (Huey + Redis)
+# Redis connection string for the Huey consumer/producer. Only required when
+# actually running the background worker (`python manage.py run_huey`).
+REDIS_URL = env.str("REDIS_URL", default="redis://localhost:6379/0")
+# ``immediate`` runs tasks synchronously in-process with NO Redis needed, which
+# is what dev and the test suite rely on. It defaults to DEBUG (True in dev/test)
+# so the suite passes without a Redis server; set HUEY_IMMEDIATE=False (with
+# DEBUG on) or run with DEBUG off to exercise the real Redis-backed queue.
+HUEY = {
+    "huey_class": "huey.RedisHuey",
+    "name": "django_scraper",
+    "immediate": env.bool("HUEY_IMMEDIATE", default=DEBUG),
+    "connection": {"url": REDIS_URL},
+    "consumer": {
+        "workers": 2,
+        "worker_type": "thread",
+    },
+}
 
 LOGGING = {
     "version": 1,

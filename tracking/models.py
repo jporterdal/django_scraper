@@ -1,6 +1,8 @@
+from datetime import timedelta
 from urllib.parse import quote_plus
 
 from django.db import models
+from django.utils import timezone
 
 
 CC_DEFAULT_SEARCH_URL = (
@@ -39,10 +41,21 @@ class Source(models.Model):
         verbose_name="Extra HTTP headers sent with search requests (e.g. Accept/Origin/Referer)",
     )
 
+    # Payload minimization: to keep responses small enough to stay under
+    # settings.SCRAPE_MAX_RESPONSE_BYTES, operators should reduce the payload at
+    # the source. Bake a ``limit``/``pageSize`` (or equivalent) query param into
+    # ``base_search_url`` and/or set this ``page_size`` hint. There is no
+    # automatic injection of ``page_size`` into request URLs; it is an operator
+    # hint only. Any future auto-injection should stay opt-in and non-breaking.
     page_size = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
         verbose_name="Optional results-per-page hint for paginated APIs",
+    )
+
+    max_pages = models.PositiveSmallIntegerField(
+        default=1,
+        verbose_name="Max pages to fetch per search (1 = single page)",
     )
 
     def build_search_url(self, term, url_suffix=""):
@@ -155,8 +168,40 @@ class WebUpdate(models.Model):
             models.Index(fields=["timestamp"]),
         ]
 
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        RUNNING = "running", "Running"
+        DONE = "done", "Done"
+        FAILED = "failed", "Failed"
+
     timestamp = models.DateTimeField(
         auto_now_add=True,
+    )
+
+    # Progress tracking for background (Huey) runs, polled by the HTMX progress
+    # partial. ``total_searches`` is set once the run starts; the per-item-source
+    # counters are incremented as the run proceeds so polling sees live progress.
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        verbose_name="Background run status",
+    )
+    total_searches = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Total item-source searches planned for this run",
+    )
+    completed_searches = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Item-source searches completed so far",
+    )
+    result_count = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Price results stored by this run",
+    )
+    error_count = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Failed searches in this run",
     )
 
 
@@ -167,6 +212,7 @@ class FetchJob(models.Model):
         PARSE_ERROR = "parse_error", "Parse error"
         CONFIG_ERROR = "config_error", "Configuration error"
         EMPTY = "empty", "No results"
+        OVERSIZED = "oversized", "Response too large"
 
     webupdate = models.ForeignKey(
         WebUpdate,
@@ -250,3 +296,144 @@ class SearchResult(models.Model):
         from .scrape import run_web_update
 
         return run_web_update(items=items)
+
+
+class UpdateSchedule(models.Model):
+    """A recurring background scrape defined by a preset cadence.
+
+    A schedule fires ``run_web_update_task`` on a recurring cadence chosen from a
+    small set of presets (see ``Frequency``) rather than a single fixed daily run.
+    The Huey periodic dispatcher (``tracking/tasks.py::dispatch_scheduled_updates``)
+    wakes every minute, finds due schedules, enqueues a run for each, and stamps
+    ``last_run_at``.
+
+    ``anchor_time`` is a *local* (``settings.TIME_ZONE``, America/Halifax)
+    time-of-day used to place runs; ``last_run_at`` is stored in UTC like every
+    other datetime. What ``anchor_time`` means depends on ``frequency``:
+
+    * ``DAILY`` — one run per day, at ``anchor_time``.
+    * ``TWICE_DAILY`` — two runs per day, at ``anchor_time`` and ``anchor_time`` + 12h.
+    * ``HOURLY`` — one run per hour; only the *minute* of ``anchor_time`` matters
+      (that many minutes past each hour); the hour component is ignored.
+
+    Due-checking is interval based (see ``FREQUENCY_INTERVAL_MINUTES``). A schedule
+    is due when it is enabled, its interval has elapsed since ``last_run_at`` (or it
+    has never run), and local time has reached the most recent aligned occurrence
+    that it has not already run for. This keeps sub-daily cadences working and
+    guarantees a schedule never double-fires within one period. A window missed
+    while the worker was down simply runs once on the next wake (no backfill).
+    """
+
+    class Frequency(models.TextChoices):
+        HOURLY = "hourly", "Hourly"
+        TWICE_DAILY = "twice_daily", "Twice Daily"
+        DAILY = "daily", "Daily"
+
+    # Minutes between runs for each preset. Kept next to ``Frequency`` so adding a
+    # new preset (e.g. "Every 15 minutes", "Weekly") is one choice above plus one
+    # entry here — no schema change.
+    FREQUENCY_INTERVAL_MINUTES = {
+        Frequency.HOURLY: 60,
+        Frequency.TWICE_DAILY: 720,
+        Frequency.DAILY: 1440,
+    }
+
+    name = models.CharField(
+        max_length=100,
+        verbose_name="Human-readable name for this schedule",
+    )
+    frequency = models.CharField(
+        max_length=20,
+        choices=Frequency.choices,
+        default=Frequency.DAILY,
+        verbose_name="How often this scrape runs",
+    )
+    anchor_time = models.TimeField(
+        verbose_name="Reference time-of-day (America/Halifax) used to place runs",
+    )
+    enabled = models.BooleanField(
+        default=True,
+        verbose_name="Whether this schedule is active",
+    )
+    tag = models.ForeignKey(
+        Tag,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="schedules",
+        verbose_name="Limit runs to active items with this tag (blank = all active items)",
+    )
+    last_run_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="When this schedule last dispatched a run (UTC)",
+    )
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.get_frequency_display()})"
+
+    @property
+    def interval_minutes(self):
+        """Minutes between runs for this schedule's frequency."""
+        return self.FREQUENCY_INTERVAL_MINUTES[self.Frequency(self.frequency)]
+
+    def _last_occurrence(self, local_now):
+        """Most recent scheduled local datetime at or before ``local_now``.
+
+        ``local_now`` must be an aware datetime already in the local timezone.
+        Returns an aware local datetime aligned to ``anchor_time`` per frequency.
+        """
+        anchor = self.anchor_time
+        freq = self.Frequency(self.frequency)
+
+        if freq == self.Frequency.HOURLY:
+            candidate = local_now.replace(
+                minute=anchor.minute, second=0, microsecond=0
+            )
+            if candidate > local_now:
+                candidate -= timedelta(hours=1)
+            return candidate
+
+        base = local_now.replace(
+            hour=anchor.hour, minute=anchor.minute, second=0, microsecond=0
+        )
+        if freq == self.Frequency.TWICE_DAILY:
+            # Occurrences fall at ``anchor`` and ``anchor`` + 12h each day; the
+            # candidate 12h before ``base`` is the previous day's second slot.
+            candidates = [
+                base - timedelta(hours=12),
+                base,
+                base + timedelta(hours=12),
+            ]
+        else:  # DAILY
+            candidates = [base - timedelta(days=1), base]
+
+        past = [c for c in candidates if c <= local_now]
+        return max(past) if past else None
+
+    def is_due(self, now):
+        """Whether this schedule should fire at aware datetime ``now``.
+
+        Due when: enabled; its per-frequency interval has elapsed since the last
+        run (never double-fires within a period); and local time has reached the
+        most recent aligned occurrence it hasn't already run for.
+        """
+        if not self.enabled:
+            return False
+
+        interval = timedelta(minutes=self.interval_minutes)
+        if self.last_run_at is not None and (now - self.last_run_at) < interval:
+            return False
+
+        local_now = timezone.localtime(now)
+        occurrence = self._last_occurrence(local_now)
+        if occurrence is None:
+            return False
+
+        if self.last_run_at is not None and self.last_run_at >= occurrence:
+            return False
+
+        return True

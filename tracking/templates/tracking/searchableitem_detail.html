@@ -53,6 +53,8 @@
             <a href="{% url 'view_terms' %}" class="btn btn-outline-secondary btn-sm">Back to Items</a>
             <a href="{% url 'edit_term' item.pk %}" class="btn btn-primary btn-sm">Edit Item</a>
             <a href="{% url 'item_sources' item.pk %}" class="btn btn-outline-primary btn-sm">Manage Sources</a>
+            <a href="{% url 'export_item_csv' item.pk %}" class="btn btn-outline-success btn-sm">Export CSV</a>
+            <a href="{% url 'export_item_json' item.pk %}" class="btn btn-outline-success btn-sm">Export JSON</a>
         </div>
     </div>
 

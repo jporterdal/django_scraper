@@ -2,7 +2,7 @@ import re
 
 from django import forms
 
-from .models import ItemSource, Source
+from .models import ItemSource, Source, UpdateSchedule
 from .parsers import sources as parser_registry
 
 
@@ -154,3 +154,52 @@ class SourceForm(forms.ModelForm):
                 "The search URL must contain '{term}' so the query can be inserted."
             )
         return url
+
+
+ANCHOR_TIME_HELP_TEXT = (
+    "Reference time-of-day (America/Halifax). Daily runs once at this time; "
+    "Twice Daily runs at this time and again 12 hours later; Hourly uses only "
+    "the minute — that many minutes past each hour."
+)
+
+
+class UpdateScheduleForm(forms.ModelForm):
+    """Form for creating/editing an ``UpdateSchedule``.
+
+    ``frequency`` is rendered as a plain ``<select>`` over the preset
+    ``Frequency`` choices ("Hourly" / "Twice Daily" / "Daily") — the default
+    widget for a ``TextChoices`` field. There is deliberately no free-form
+    cron/interval field; the cadence is always one of the presets.
+    """
+
+    class Meta:
+        model = UpdateSchedule
+        fields = ["name", "frequency", "anchor_time", "tag", "enabled"]
+        widgets = {
+            "anchor_time": forms.TimeInput(
+                attrs={"type": "time"}, format="%H:%M"
+            ),
+        }
+        help_texts = {
+            "anchor_time": ANCHOR_TIME_HELP_TEXT,
+            "frequency": "How often this scrape runs.",
+            "tag": "Limit runs to active items with this tag. Leave blank for all active items.",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # "All active items" reads better than the default empty label for the
+        # optional tag scope.
+        self.fields["tag"].empty_label = "All active items"
+
+        for name, field in self.fields.items():
+            widget = field.widget
+            if isinstance(widget, forms.CheckboxInput):
+                css = "form-check-input"
+            elif isinstance(widget, forms.Select):
+                css = "form-select"
+            else:
+                css = "form-control"
+            existing = widget.attrs.get("class", "")
+            widget.attrs["class"] = (existing + " " + css).strip()

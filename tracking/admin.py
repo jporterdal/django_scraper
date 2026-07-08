@@ -1,6 +1,14 @@
 from django.contrib import admin
 
-from .models import FetchJob, ItemSource, SearchableItem, SearchResult, Source, WebUpdate
+from .models import (
+    FetchJob,
+    ItemSource,
+    SearchableItem,
+    SearchResult,
+    Source,
+    UpdateSchedule,
+    WebUpdate,
+)
 
 
 @admin.register(SearchableItem)
@@ -66,3 +74,10 @@ class SearchResultAdmin(admin.ModelAdmin):
     list_display = ["item", "source", "search_term", "title", "price", "instock", "update"]
     list_filter = ["source", "instock"]
     search_fields = ["search_term", "title"]
+
+
+@admin.register(UpdateSchedule)
+class UpdateScheduleAdmin(admin.ModelAdmin):
+    list_display = ["name", "frequency", "anchor_time", "tag", "enabled", "last_run_at"]
+    list_filter = ["enabled", "frequency", "tag"]
+    search_fields = ["name"]

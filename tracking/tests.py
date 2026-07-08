@@ -28,47 +28,49 @@ class UpdateFromWebViewTests(TestCase):
         self.item = SearchableItem.objects.create(text="test item", active=True)
         ItemSource.objects.create(item=self.item, source=self.source)
 
+    # Phase 3 Step 3 — the view now enqueues run_web_update_task (Huey) after
+    # creating a WebUpdate, instead of calling SearchResult.update_from_web
+    # synchronously. These assertions were updated to the background flow: we
+    # patch the task at the view boundary and check enqueue args + messages.
     def test_get_redirects_without_scraping(self):
-        with patch("tracking.views.SearchResult.update_from_web") as mock_update:
+        with patch("tracking.views.run_web_update_task") as mock_task:
             response = self.client.get(reverse("update"))
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.url, reverse("view_terms"))
-        mock_update.assert_not_called()
+        mock_task.assert_not_called()
 
-    def test_post_all_active_calls_update_without_item_filter(self):
-        with patch(
-            "tracking.views.SearchResult.update_from_web",
-            return_value=WebUpdateStats(result_count=3, error_count=0, search_count=1),
-        ) as mock_update:
+    def test_post_all_active_enqueues_task_without_item_filter(self):
+        with patch("tracking.views.run_web_update_task") as mock_task:
             response = self.client.post(reverse("update"), {"mode": "all"})
 
         self.assertEqual(response.status_code, 302)
-        mock_update.assert_called_once_with(items=None)
+        mock_task.assert_called_once()
+        self.assertIsNone(mock_task.call_args.kwargs["item_ids"])
+        # A WebUpdate row is pre-created and its pk passed to the task.
+        webupdate = WebUpdate.objects.get()
+        self.assertEqual(mock_task.call_args.args[0], webupdate.pk)
+        self.assertEqual(webupdate.status, WebUpdate.Status.PENDING)
         messages = list(get_messages(response.wsgi_request))
         self.assertEqual(len(messages), 1)
-        self.assertIn("Stored 3 price result(s)", str(messages[0]))
+        self.assertIn("Started a background price update", str(messages[0]))
 
-    def test_post_selected_passes_filtered_items(self):
-        with patch(
-            "tracking.views.SearchResult.update_from_web",
-            return_value=WebUpdateStats(result_count=1, error_count=0, search_count=1),
-        ) as mock_update:
+    def test_post_selected_passes_filtered_item_ids(self):
+        with patch("tracking.views.run_web_update_task") as mock_task:
             response = self.client.post(
                 reverse("update"),
                 {"mode": "selected", "item_ids": [str(self.item.pk)]},
             )
 
         self.assertEqual(response.status_code, 302)
-        items_arg = mock_update.call_args.kwargs["items"]
-        self.assertEqual(list(items_arg.values_list("pk", flat=True)), [self.item.pk])
+        self.assertEqual(mock_task.call_args.kwargs["item_ids"], [self.item.pk])
 
     def test_post_selected_with_no_checkboxes_shows_warning(self):
-        with patch("tracking.views.SearchResult.update_from_web") as mock_update:
+        with patch("tracking.views.run_web_update_task") as mock_task:
             response = self.client.post(reverse("update"), {"mode": "selected"})
 
         self.assertEqual(response.status_code, 302)
-        mock_update.assert_not_called()
+        mock_task.assert_not_called()
         messages = list(get_messages(response.wsgi_request))
         self.assertEqual(str(messages[0]), "No items selected.")
 
@@ -76,23 +78,23 @@ class UpdateFromWebViewTests(TestCase):
         self.item.active = False
         self.item.save()
 
-        with patch("tracking.views.SearchResult.update_from_web") as mock_update:
+        with patch("tracking.views.run_web_update_task") as mock_task:
             response = self.client.post(
                 reverse("update"),
                 {"mode": "selected", "item_ids": [str(self.item.pk)]},
             )
 
-        mock_update.assert_not_called()
+        mock_task.assert_not_called()
         messages = list(get_messages(response.wsgi_request))
         self.assertIn("No active items in selection", str(messages[0]))
 
     def test_post_with_no_configured_sources_shows_warning(self):
         ItemSource.objects.all().delete()
 
-        with patch("tracking.views.SearchResult.update_from_web") as mock_update:
+        with patch("tracking.views.run_web_update_task") as mock_task:
             response = self.client.post(reverse("update"), {"mode": "all"})
 
-        mock_update.assert_not_called()
+        mock_task.assert_not_called()
         messages = list(get_messages(response.wsgi_request))
         self.assertIn("No items with configured sources", str(messages[0]))
 
@@ -294,7 +296,7 @@ class ScrapeUrlIntegrationTests(TestCase):
 
         expected_url = "https://example.com/search?s=test+item&pickup=62"
         mock_run_parser.assert_called_once_with(
-            mock_parser, self.fetcher, expected_url, headers=None
+            mock_parser, self.fetcher, expected_url, headers=None, max_pages=1
         )
 
 

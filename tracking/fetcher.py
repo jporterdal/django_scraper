@@ -15,6 +15,23 @@ DEFAULT_USER_AGENT = (
 )
 
 
+class ResponseTooLargeError(Exception):
+    """Raised when a fetched response exceeds the configured size cap.
+
+    Carries the offending ``url`` and the observed ``size`` (bytes) alongside the
+    ``limit`` that was exceeded so callers can log/record it distinctly.
+    """
+
+    def __init__(self, url, size, limit):
+        self.url = url
+        self.size = size
+        self.limit = limit
+        super().__init__(
+            f"Response from {url} is too large: {size} bytes exceeds cap of "
+            f"{limit} bytes"
+        )
+
+
 class Fetcher:
     """HTTP client for vendor search pages with retries and rate limiting."""
 
@@ -24,10 +41,13 @@ class Fetcher:
         jitter_seconds=1.0,
         timeout=30,
         user_agent=DEFAULT_USER_AGENT,
+        max_response_bytes=None,
     ):
         self.delay_seconds = delay_seconds
         self.jitter_seconds = jitter_seconds
         self.timeout = timeout
+        # 0 or None disables the size cap (unlimited).
+        self.max_response_bytes = max_response_bytes
         self._session = requests.Session()
         self._session.headers["User-Agent"] = user_agent
 
@@ -47,6 +67,7 @@ class Fetcher:
             delay_seconds=getattr(settings, "SCRAPE_REQUEST_DELAY_SECONDS", 3.0),
             jitter_seconds=getattr(settings, "SCRAPE_REQUEST_DELAY_JITTER_SECONDS", 1.0),
             timeout=getattr(settings, "SCRAPE_REQUEST_TIMEOUT_SECONDS", 30),
+            max_response_bytes=getattr(settings, "SCRAPE_MAX_RESPONSE_BYTES", 8_000_000),
         )
 
     def wait(self):
@@ -70,4 +91,41 @@ class Fetcher:
             logger.warning("HTTP %s from %s", response.status_code, url)
         else:
             logger.debug("HTTP %s from %s", response.status_code, url)
+        self._enforce_size_cap(response, url)
         return response
+
+    def _enforce_size_cap(self, response, url):
+        """Reject responses larger than ``max_response_bytes``.
+
+        Uses the ``Content-Length`` header as a fast path when present, then falls
+        back to the actual downloaded body size. Raises ``ResponseTooLargeError``
+        when the cap is exceeded. A cap of 0 or None means unlimited.
+        """
+        limit = self.max_response_bytes
+        if not limit:
+            return
+
+        declared = response.headers.get("Content-Length")
+        if declared is not None:
+            try:
+                declared_size = int(declared)
+            except (TypeError, ValueError):
+                declared_size = None
+            if declared_size is not None and declared_size > limit:
+                logger.warning(
+                    "Response from %s declares %s bytes, exceeding cap of %s bytes",
+                    url,
+                    declared_size,
+                    limit,
+                )
+                raise ResponseTooLargeError(url, declared_size, limit)
+
+        body_size = len(response.content)
+        if body_size > limit:
+            logger.warning(
+                "Response from %s is %s bytes, exceeding cap of %s bytes",
+                url,
+                body_size,
+                limit,
+            )
+            raise ResponseTooLargeError(url, body_size, limit)

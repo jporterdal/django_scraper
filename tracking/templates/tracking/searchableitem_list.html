@@ -27,6 +27,14 @@
         {% endfor %}
     {% endif %}
 
+    {% if request.GET.update %}
+    {# Background-update progress: load the partial, which then self-polls until done. #}
+    <div id="update-progress"
+         hx-get="{% url 'update_progress' request.GET.update %}"
+         hx-trigger="load"
+         hx-swap="outerHTML"></div>
+    {% endif %}
+
     <form method="post" action="{% url 'update' %}">
         {% csrf_token %}
         <div class="card mb-4">
@@ -38,6 +46,7 @@
                     <a href="{% url 'view_sources' %}" class="btn btn-outline-primary btn-sm">Manage Sources</a>
                     <button type="submit" name="mode" value="selected" class="btn btn-warning btn-sm">Update Selected</button>
                     <button type="submit" name="mode" value="all" class="btn btn-outline-warning btn-sm">Update All Active</button>
+                    <a href="{% url 'view_schedules' %}" class="btn btn-outline-primary btn-sm">Schedules</a>
                     <a href="{% url 'view_updates' %}" class="btn btn-outline-secondary btn-sm">Scrape History</a>
                 </div>
             </div>
@@ -130,6 +139,7 @@
     </form>
 </div>
 
+<script src="https://unpkg.com/htmx.org@2.0.3"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 <script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
 <script src="https://cdn.datatables.net/2.0.8/js/dataTables.min.js"></script>
@@ -138,6 +148,7 @@
 
 <script>
     $(document).ready(function() {
+        {% if object_list %}
         $('#itemTable').DataTable({
             "paging": false,
             "info": false,
@@ -145,6 +156,7 @@
             "order": [],
             "columnDefs": [{ "orderable": false, "targets": [0, 5, 6] }],
         });
+        {% endif %}
 
         $('#selectAll').on('change', function() {
             $('.item-checkbox').prop('checked', this.checked);
