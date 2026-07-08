@@ -59,11 +59,10 @@ def _record_fetch_job(
     )
 
 
-def _run_parser_search(parser, fetcher, url):
-    """Fetch a search page and populate parser.results without using SearchParser.search()."""
-    parser._init_vars()
+def _run_parser_search(parser, fetcher, url, headers=None):
+    """Fetch a search page and populate parser.results via the uniform parse_response contract."""
     parser.url = url
-    response = fetcher.get(url)
+    response = fetcher.get(url, headers=headers)
 
     if response.status_code != 200:
         return FetchOutcome(
@@ -73,7 +72,7 @@ def _run_parser_search(parser, fetcher, url):
             result_count=0,
         )
 
-    parser.feed(response.text)
+    parser.parse_response(response)
     return FetchOutcome(
         ok=True,
         http_status=200,
@@ -161,7 +160,7 @@ def run_web_update(items=None, fetcher=None):
             continue
 
         try:
-            parser_cls = parsers.sources[source.key]
+            parser_cls = parsers.sources[source.parser_key]
         except KeyError:
             duration_ms = int((time.perf_counter() - start) * 1000)
             logger.error(
@@ -204,8 +203,10 @@ def run_web_update(items=None, fetcher=None):
             error_count += 1
             continue
 
+        headers = source.request_headers or None
+
         try:
-            outcome = _run_parser_search(parser, fetcher, search_url)
+            outcome = _run_parser_search(parser, fetcher, search_url, headers=headers)
         except Exception as exc:
             duration_ms = int((time.perf_counter() - start) * 1000)
             logger.exception(

@@ -16,15 +16,33 @@ class Source(models.Model):
     )
 
     key = models.CharField(
-        max_length=3,
+        max_length=20,
         primary_key=True,
-        verbose_name="String key indicating which Parser should be used when searching with this Source"
+        verbose_name="Short abbreviation identifying this source (user-facing; e.g. 'cc')",
+    )
+
+    parser_key = models.CharField(
+        max_length=20,
+        blank=False,
+        verbose_name="Parser registry key selecting which parser handles this source (e.g. 'shopify', 'storepass')",
     )
 
     base_search_url = models.CharField(
-        max_length=500,
+        max_length=1000,
         blank=False,
         verbose_name="Search URL template; use {term} for the URL-encoded query string",
+    )
+
+    request_headers = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Extra HTTP headers sent with search requests (e.g. Accept/Origin/Referer)",
+    )
+
+    page_size = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Optional results-per-page hint for paginated APIs",
     )
 
     def build_search_url(self, term, url_suffix=""):
@@ -126,6 +144,9 @@ class ItemSource(models.Model):
         blank=True,
         verbose_name="Regex patterns; matching titles are excluded",
     )
+
+    class Meta:
+        unique_together = [("item", "source")]
 
 
 class WebUpdate(models.Model):

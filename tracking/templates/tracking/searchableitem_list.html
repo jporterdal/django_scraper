@@ -35,6 +35,7 @@
                 <div class="d-flex flex-wrap gap-2 align-items-center">
                     <a href="{% url 'add_term' %}" class="btn btn-success btn-sm">Add New Item</a>
                     <a href="{% url 'view_tags' %}" class="btn btn-outline-primary btn-sm">Manage Tags</a>
+                    <a href="{% url 'view_sources' %}" class="btn btn-outline-primary btn-sm">Manage Sources</a>
                     <button type="submit" name="mode" value="selected" class="btn btn-warning btn-sm">Update Selected</button>
                     <button type="submit" name="mode" value="all" class="btn btn-outline-warning btn-sm">Update All Active</button>
                     <a href="{% url 'view_updates' %}" class="btn btn-outline-secondary btn-sm">Scrape History</a>
@@ -111,7 +112,8 @@
                                     </div>
                                 </td>
                                 <td>
-                                    <a href="" class="btn btn-info btn-sm me-2 disabled" title="Coming soon" tabindex="-1" aria-disabled="true">View History</a>
+                                    <a href="{% url 'item_detail' item.pk %}" class="btn btn-info btn-sm me-2">View History</a>
+                                    <a href="{% url 'item_sources' item.pk %}" class="btn btn-outline-secondary btn-sm me-2">Sources</a>
                                     <a href="{% url 'edit_term' item.pk %}" class="btn btn-primary btn-sm">Edit</a>
                                 </td>
                             </tr>

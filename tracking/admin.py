@@ -13,7 +13,7 @@ class SearchableItemAdmin(admin.ModelAdmin):
 
 @admin.register(Source)
 class SourceAdmin(admin.ModelAdmin):
-    list_display = ["key", "name", "base_search_url"]
+    list_display = ["key", "parser_key", "name", "base_search_url"]
 
 
 @admin.register(ItemSource)

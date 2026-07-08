@@ -5,7 +5,42 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class CCSearchParser(SearchParser):
+class JSONSearchParser:
+    """Base class for JSON API search parsers. Subclasses implement parse_data()."""
+    data_keys = ["category", "title", "price", "instock"]
+
+    def __init__(self, term=""):
+        self.term = term
+        self.url = None
+        self.results = []
+
+    def _init_vars(self):
+        self.results = []
+
+    def parse_response(self, response):
+        self._init_vars()
+        self.parse_data(response.json())
+
+    def parse_data(self, data):
+        raise NotImplementedError
+
+    def add_result(self, title, price, instock, category=""):
+        self.results.append({
+            "title": str(title),
+            "price": float(price),
+            "instock": 1 if instock else 0,
+            "category": category or "",
+        })
+
+
+class HTMLResponseParserMixin:
+    """Gives submodule HTML parsers the uniform parse_response(response) contract."""
+    def parse_response(self, response):
+        self._init_vars()
+        self.feed(response.text)
+
+
+class CCSearchParser(HTMLResponseParserMixin, SearchParser):
     def _init_vars(self):
         super()._init_vars()
 
@@ -59,4 +94,45 @@ class CCSearchParser(SearchParser):
 
 
 
-sources = {'cc': CCSearchParser}
+class ShopifyParser(JSONSearchParser):
+    """Shopify prod-indexer (Elasticsearch-style) JSON search results."""
+
+    def parse_data(self, data):
+        for hit in data.get("hits", {}).get("hits", []):
+            src = hit.get("_source", {})
+            title = src.get("title", "")
+            category = src.get("MTG_Set_Name") or src.get("Set") or ""
+            for variant in src.get("variants", []):
+                condition = ""
+                for opt in variant.get("selectedOptions", []):
+                    if opt.get("name") == "Condition":
+                        condition = opt.get("value", "")
+                display = f"{title} ({condition})" if condition else title
+                self.add_result(
+                    title=display,
+                    price=variant.get("price", 0),
+                    instock=variant.get("inventoryQuantity", 0) > 0,
+                    category=category,
+                )
+
+
+class StorepassParser(JSONSearchParser):
+    """Storepass SaaS JSON search results."""
+
+    def parse_data(self, data):
+        for product in data.get("products", []):
+            title = product.get("display_name") or product.get("name", "")
+            pld = product.get("productLineData")
+            category = pld.get("set", "") if isinstance(pld, dict) else ""
+            for variant in product.get("variantInfo", []):
+                condition = variant.get("title", "")
+                display = f"{title} ({condition})" if condition else title
+                self.add_result(
+                    title=display,
+                    price=variant.get("price", 0),
+                    instock=variant.get("inventory_quantity", 0) > 0,
+                    category=category,
+                )
+
+
+sources = {'cc': CCSearchParser, 'shopify': ShopifyParser, 'storepass': StorepassParser}

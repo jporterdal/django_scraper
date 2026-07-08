@@ -57,9 +57,9 @@ class Fetcher:
         logger.debug("Rate limit pause %.2fs before next request", pause)
         time.sleep(pause)
 
-    def get(self, url):
+    def get(self, url, headers=None):
         logger.info("GET %s", url)
-        response = self._session.get(url, timeout=self.timeout)
+        response = self._session.get(url, timeout=self.timeout, headers=headers)
         if response.status_code in (403, 429):
             logger.warning(
                 "HTTP %s from %s — possible bot detection or rate limiting",
