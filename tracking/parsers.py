@@ -153,6 +153,30 @@ class ShopifyParser(JSONSearchParser):
         return new_url
 
 
+class WtFiltersParser(JSONSearchParser):
+    """POST-JSON search API results (``data.results[]``).
+
+    Search results collapse product variants into one row per product; product-level
+    price and stock only — no secondary per-variant fetches.
+
+    Configure the Source at runtime with ``http_method="POST"``, a
+    ``request_body_template`` containing ``{term}`` (plain text), and
+    ``request_headers`` with ``Origin`` plus a ``Referer`` such as
+    ``https://…/search?q={term}`` (URL-encoded at fetch time — see
+    ``Source.build_request_headers``). See ``tracking/docs/wt_investigation.md``
+    for full configuration details.
+    """
+
+    def parse_data(self, data):
+        for row in data.get("data", {}).get("results", []):
+            self.add_result(
+                title=row.get("title", ""),
+                price=row.get("price", 0),
+                instock=row.get("in_stock"),
+                category=row.get("subcategory") or row.get("category", ""),
+            )
+
+
 class StorepassParser(JSONSearchParser):
     """Storepass SaaS JSON search results."""
 
@@ -193,4 +217,9 @@ class StorepassParser(JSONSearchParser):
         return urlunparse(parsed._replace(query=new_query))
 
 
-sources = {'cc': CCSearchParser, 'shopify': ShopifyParser, 'storepass': StorepassParser}
+sources = {
+    'cc': CCSearchParser,
+    'shopify': ShopifyParser,
+    'storepass': StorepassParser,
+    'wtfilters': WtFiltersParser,
+}

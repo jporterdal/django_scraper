@@ -60,7 +60,9 @@ def _record_fetch_job(
     )
 
 
-def _run_parser_search(parser, fetcher, url, headers=None, max_pages=1):
+def _run_parser_search(
+    parser, fetcher, url, headers=None, max_pages=1, method="GET", body=None
+):
     """Fetch one or more search pages and populate parser.results.
 
     Page 1 resets and parses via ``parser.parse_response``; pages ``2..max_pages``
@@ -68,9 +70,16 @@ def _run_parser_search(parser, fetcher, url, headers=None, max_pages=1):
     returns ``None`` or the page cap is reached. ``fetcher.wait()`` is honored between
     page requests for rate limiting. Pages already gathered are kept if a later page
     fails (non-200). When ``max_pages == 1`` this is byte-identical to a single fetch.
+
+    POST sources issue ``fetcher.post`` on page 1 with ``json=body``; pagination is
+  single-page only (``max_pages`` is effectively 1 for POST).
     """
     parser.url = url
-    response = fetcher.get(url, headers=headers)
+    if method == "POST":
+        response = fetcher.post(url, json=body, headers=headers)
+        max_pages = 1
+    else:
+        response = fetcher.get(url, headers=headers)
 
     if response.status_code != 200:
         return FetchOutcome(
@@ -171,49 +180,58 @@ def run_web_update(items=None, fetcher=None, webupdate=None):
             }
 
             try:
-                if not source.base_search_url:
-                    duration_ms = int((time.perf_counter() - start) * 1000)
-                    logger.error(
-                        "Source %(source_key)r has no base_search_url configured",
-                        log_ctx,
-                    )
-                    _record_fetch_job(
-                        webupdate,
-                        item,
-                        source,
-                        search_term,
-                        search_url,
-                        FetchJob.Status.CONFIG_ERROR,
-                        error_message="Source has no base_search_url configured",
-                        duration_ms=duration_ms,
-                    )
-                    fetch_job_count += 1
-                    error_count += 1
-                    continue
+                pinned_url = item_source.pinned_url
+                if pinned_url:
+                    search_url = pinned_url
+                    fetch_method = "GET"
+                    fetch_body = None
+                else:
+                    if not source.base_search_url:
+                        duration_ms = int((time.perf_counter() - start) * 1000)
+                        logger.error(
+                            "Source %(source_key)r has no base_search_url configured",
+                            log_ctx,
+                        )
+                        _record_fetch_job(
+                            webupdate,
+                            item,
+                            source,
+                            search_term,
+                            search_url,
+                            FetchJob.Status.CONFIG_ERROR,
+                            error_message="Source has no base_search_url configured",
+                            duration_ms=duration_ms,
+                        )
+                        fetch_job_count += 1
+                        error_count += 1
+                        continue
 
-                try:
-                    search_url = source.build_search_url(
-                        search_term, item_source.url_suffix
-                    )
-                except ValueError as exc:
-                    duration_ms = int((time.perf_counter() - start) * 1000)
-                    logger.exception(
-                        "Invalid base_search_url for %(source_key)r",
-                        log_ctx,
-                    )
-                    _record_fetch_job(
-                        webupdate,
-                        item,
-                        source,
-                        search_term,
-                        search_url,
-                        FetchJob.Status.CONFIG_ERROR,
-                        error_message=str(exc),
-                        duration_ms=duration_ms,
-                    )
-                    fetch_job_count += 1
-                    error_count += 1
-                    continue
+                    try:
+                        search_url = source.build_search_url(
+                            search_term, item_source.url_suffix
+                        )
+                    except ValueError as exc:
+                        duration_ms = int((time.perf_counter() - start) * 1000)
+                        logger.exception(
+                            "Invalid base_search_url for %(source_key)r",
+                            log_ctx,
+                        )
+                        _record_fetch_job(
+                            webupdate,
+                            item,
+                            source,
+                            search_term,
+                            search_url,
+                            FetchJob.Status.CONFIG_ERROR,
+                            error_message=str(exc),
+                            duration_ms=duration_ms,
+                        )
+                        fetch_job_count += 1
+                        error_count += 1
+                        continue
+
+                    fetch_method = source.http_method
+                    fetch_body = source.build_request_body(search_term)
 
                 try:
                     parser_cls = parsers.sources[source.parser_key]
@@ -259,7 +277,7 @@ def run_web_update(items=None, fetcher=None, webupdate=None):
                     error_count += 1
                     continue
 
-                headers = source.request_headers or None
+                headers = source.build_request_headers(search_term)
 
                 try:
                     outcome = _run_parser_search(
@@ -268,6 +286,8 @@ def run_web_update(items=None, fetcher=None, webupdate=None):
                         search_url,
                         headers=headers,
                         max_pages=source.max_pages,
+                        method=fetch_method,
+                        body=fetch_body,
                     )
                 except ResponseTooLargeError as exc:
                     duration_ms = int((time.perf_counter() - start) * 1000)
@@ -383,7 +403,7 @@ def run_web_update(items=None, fetcher=None, webupdate=None):
                 for result in parser.results:
                     kws.append({
                         "title": result["title"],
-                        "price": result["price"],
+                        "price": result["price"] if result["instock"] else None,
                         "category": result["category"],
                         "search_term": search_term,
                         "item": item,

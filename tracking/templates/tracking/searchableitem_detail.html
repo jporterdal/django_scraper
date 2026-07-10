@@ -105,7 +105,7 @@
                             <td><code>{{ result.source.key }}</code></td>
                             <td>{{ result.search_term }}</td>
                             <td>{{ result.title }}</td>
-                            <td>${{ result.price }}</td>
+                            <td>{% if result.price is not None %}${{ result.price }}{% endif %}</td>
                             <td>
                                 {% if result.instock %}
                                     <span class="badge text-bg-success">yes</span>

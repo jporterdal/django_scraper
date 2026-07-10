@@ -1,3 +1,4 @@
+import copy
 from datetime import timedelta
 from urllib.parse import quote_plus
 
@@ -58,18 +59,75 @@ class Source(models.Model):
         verbose_name="Max pages to fetch per search (1 = single page)",
     )
 
+    class HttpMethod(models.TextChoices):
+        GET = "GET", "GET"
+        POST = "POST", "POST"
+
+    http_method = models.CharField(
+        max_length=4,
+        choices=HttpMethod.choices,
+        default=HttpMethod.GET,
+        verbose_name="HTTP method for search requests",
+    )
+
+    request_body_template = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="POST request body template; use {term} in string leaves for the search term",
+    )
+
+    def build_request_body(self, term):
+        if self.http_method != self.HttpMethod.POST:
+            return None
+        if not self.request_body_template:
+            return None
+        return _inject_term(
+            copy.deepcopy(self.request_body_template), term, lambda value: value
+        )
+
+    def build_request_headers(self, term):
+        if not self.request_headers:
+            return None
+        return _inject_term(
+            copy.deepcopy(self.request_headers), term, quote_plus
+        )
+
     def build_search_url(self, term, url_suffix=""):
-        if "{term}" not in self.base_search_url:
-            raise ValueError(
-                f"Source {self.key!r} base_search_url must contain '{{term}}'"
-            )
-        url = self.base_search_url.format(term=quote_plus(term))
+        if self.http_method == self.HttpMethod.POST:
+            if "{term}" in self.base_search_url:
+                url = self.base_search_url.format(term=quote_plus(term))
+            else:
+                url = self.base_search_url
+        else:
+            if "{term}" not in self.base_search_url:
+                raise ValueError(
+                    f"Source {self.key!r} base_search_url must contain '{{term}}'"
+                )
+            url = self.base_search_url.format(term=quote_plus(term))
         if url_suffix:
             if url_suffix.startswith(("&", "?")):
                 url += url_suffix
             else:
                 url += "&" + url_suffix
         return url
+
+
+def _inject_term(obj, term, encode):
+    """Replace ``{term}`` in every string leaf of a JSON-like structure.
+
+    ``encode`` prepares the substitution value (raw for POST bodies, URL-encoded
+    for headers and search URLs).
+    """
+    replacement = encode(term)
+    if isinstance(obj, dict):
+        return {
+            key: _inject_term(value, term, encode) for key, value in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_inject_term(value, term, encode) for value in obj]
+    if isinstance(obj, str):
+        return obj.replace("{term}", replacement)
+    return obj
 
 
 class SearchableItem(models.Model):
@@ -156,6 +214,12 @@ class ItemSource(models.Model):
         default=list,
         blank=True,
         verbose_name="Regex patterns; matching titles are excluded",
+    )
+    pinned_url = models.URLField(
+        max_length=1000,
+        blank=True,
+        default="",
+        verbose_name="Pinned result URL — fetch this directly instead of running a search",
     )
 
     class Meta:
@@ -249,8 +313,8 @@ class SearchResult(models.Model):
     )
 
     price = models.FloatField(
-        null=False,
-        blank=False,
+        null=True,
+        blank=True,
         verbose_name="Price returned in search result",
     )
 

@@ -47,7 +47,7 @@ class ExportTests(TestCase):
         SearchResult.objects.create(
             title="MSI RTX 5070",
             search_term="rtx 5070",
-            price=849.50,
+            price=None,
             category="Video Cards",
             instock=0,
             item=self.item,
@@ -93,6 +93,7 @@ class ExportTests(TestCase):
         self.assertEqual(by_source["cc"]["search_term"], "rtx 5070")
         self.assertTrue(by_source["cc"]["timestamp"])
         self.assertEqual(by_source["f2f"]["instock"], 0)
+        self.assertIsNone(by_source["f2f"]["price"])
 
     def test_csv_export_empty_item(self):
         response = self.client.get(reverse("export_item_csv", args=[self.empty_item.pk]))

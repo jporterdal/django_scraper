@@ -7,8 +7,33 @@ from .parsers import sources as parser_registry
 
 
 BASE_SEARCH_URL_HELP_TEXT = (
-    "Search URL template; use {term} for the URL-encoded query string. "
-    "Example: https://example.com/search?q={term}"
+    "Search URL or API endpoint. For GET sources, include {term} where the "
+    "URL-encoded query belongs (e.g. https://example.com/search?q={term}). "
+    "For POST sources, {term} is optional — the query usually lives in the "
+    "request body template instead."
+)
+
+HTTP_METHOD_HELP_TEXT = (
+    "GET sends the search term in the URL; POST sends it in the JSON body "
+    "template below."
+)
+
+REQUEST_BODY_TEMPLATE_HELP_TEXT = (
+    "JSON object used as the POST request body. Put {term} in string values "
+    "for the search query (plain text, not URL-encoded). Leave empty or {} "
+    "for GET sources."
+)
+
+REQUEST_HEADERS_HELP_TEXT = (
+    "JSON object of extra HTTP headers (e.g. Accept, Origin, Referer). Use "
+    "{term} in string values where a header should reflect the current search "
+    "query — it is URL-encoded the same way as in GET search URLs (e.g. "
+    "Referer: https://example.com/search?q={term})."
+)
+
+MAX_PAGES_HELP_TEXT = (
+    "Maximum search result pages to fetch per item-source (1 = single page). "
+    "POST sources always fetch a single page regardless of this setting."
 )
 
 
@@ -25,6 +50,13 @@ EXCLUDE_HELP_TEXT = (
     "[Foil]); use \\[Beatdown\\] for a literal bracket and \\b...\\b for word "
     "boundaries. "
     "Examples — exclude: Foil · Japanese · \\bJP\\b · \\bTi\\b · Refurb"
+)
+
+PINNED_URL_HELP_TEXT = (
+    "When set, the scraper fetches this URL directly with GET instead of building "
+    "a search URL from the source template. Use for stubborn listings where search "
+    "does not return the right result. The source's parser must be able to parse "
+    "the pinned endpoint's response."
 )
 
 
@@ -66,9 +98,13 @@ class ItemSourceForm(forms.ModelForm):
         fields = [
             "source",
             "url_suffix",
+            "pinned_url",
             "title_include_patterns",
             "title_exclude_patterns",
         ]
+        help_texts = {
+            "pinned_url": PINNED_URL_HELP_TEXT,
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -126,20 +162,46 @@ class SourceForm(forms.ModelForm):
             "key",
             "name",
             "parser_key",
+            "http_method",
             "base_search_url",
+            "request_body_template",
             "request_headers",
             "page_size",
+            "max_pages",
         ]
+        widgets = {
+            "request_body_template": forms.Textarea(attrs={"rows": 10}),
+            "request_headers": forms.Textarea(attrs={"rows": 4}),
+        }
         help_texts = {
             "base_search_url": BASE_SEARCH_URL_HELP_TEXT,
+            "http_method": HTTP_METHOD_HELP_TEXT,
+            "request_body_template": REQUEST_BODY_TEMPLATE_HELP_TEXT,
+            "request_headers": REQUEST_HEADERS_HELP_TEXT,
+            "max_pages": MAX_PAGES_HELP_TEXT,
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         for name, field in self.fields.items():
-            css_class = field.widget.attrs.get("class", "")
-            field.widget.attrs["class"] = (css_class + " form-control").strip()
+            widget = field.widget
+            if isinstance(widget, forms.CheckboxInput):
+                css = "form-check-input"
+            elif isinstance(widget, forms.Select):
+                css = "form-select"
+            else:
+                css = "form-control"
+            existing = widget.attrs.get("class", "")
+            widget.attrs["class"] = (existing + " " + css).strip()
+            if name in ("request_body_template", "request_headers"):
+                widget.attrs.setdefault("class", "")
+                widget.attrs["class"] = (
+                    widget.attrs["class"] + " font-monospace"
+                ).strip()
+
+        self.fields["page_size"].required = False
+        self.fields["max_pages"].required = False
 
         # key is the primary key: allow it on create, lock it on edit.
         instance = getattr(self, "instance", None)
@@ -147,13 +209,19 @@ class SourceForm(forms.ModelForm):
             self.fields["key"].disabled = True
             self.fields["key"].help_text = "The key cannot be changed once created."
 
-    def clean_base_search_url(self):
-        url = self.cleaned_data.get("base_search_url", "")
-        if "{term}" not in url:
-            raise forms.ValidationError(
-                "The search URL must contain '{term}' so the query can be inserted."
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned is None:
+            return cleaned
+
+        url = cleaned.get("base_search_url", "")
+        http_method = cleaned.get("http_method", Source.HttpMethod.GET)
+        if http_method != Source.HttpMethod.POST and "{term}" not in url:
+            self.add_error(
+                "base_search_url",
+                "The search URL must contain '{term}' so the query can be inserted.",
             )
-        return url
+        return cleaned
 
 
 ANCHOR_TIME_HELP_TEXT = (

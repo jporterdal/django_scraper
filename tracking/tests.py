@@ -250,7 +250,11 @@ class SourceJSONConfigTests(TestCase):
         form = SourceForm(data={
             "key": "zz",
             "name": "No Parser",
+            "http_method": "GET",
             "base_search_url": "https://example.com/search?s={term}",
+            "request_body_template": "{}",
+            "request_headers": "{}",
+            "max_pages": "1",
             "parser_key": "",
         })
         self.assertFalse(form.is_valid())
@@ -296,7 +300,13 @@ class ScrapeUrlIntegrationTests(TestCase):
 
         expected_url = "https://example.com/search?s=test+item&pickup=62"
         mock_run_parser.assert_called_once_with(
-            mock_parser, self.fetcher, expected_url, headers=None, max_pages=1
+            mock_parser,
+            self.fetcher,
+            expected_url,
+            headers=None,
+            max_pages=1,
+            method="GET",
+            body=None,
         )
 
 
@@ -878,6 +888,31 @@ class ScrapeHeaderTests(TestCase):
             {"Accept": "application/json"},
         )
 
+    @patch("tracking.scrape._run_parser_search")
+    def test_run_web_update_substitutes_term_in_request_headers(self, mock_run_parser):
+        self.source.request_headers = {
+            "Accept": "application/json",
+            "Referer": "https://example.com/search?q={term}",
+        }
+        self.source.save(update_fields=["request_headers"])
+        mock_run_parser.return_value = FetchOutcome(
+            ok=True, http_status=200, error_message="", result_count=0
+        )
+        mock_parser = MagicMock(results=[])
+        with patch.dict(
+            "tracking.parsers.sources",
+            {"cc": MagicMock(return_value=mock_parser)},
+        ):
+            run_web_update(fetcher=self.fetcher)
+
+        self.assertEqual(
+            mock_run_parser.call_args.kwargs["headers"],
+            {
+                "Accept": "application/json",
+                "Referer": "https://example.com/search?q=test+item",
+            },
+        )
+
 
 class ShopifyParserFixtureTests(SimpleTestCase):
     """Phase 2 Step 3 — ShopifyParser (F2F prod-indexer) against the real fixture."""
@@ -1143,9 +1178,12 @@ class SourceManagementTests(TestCase):
             "key": "zz",
             "name": "New Store",
             "parser_key": "shopify",
+            "http_method": "GET",
             "base_search_url": "https://example.com/search/keyword/{term}",
+            "request_body_template": "{}",
             "request_headers": "{}",
             "page_size": "",
+            "max_pages": "1",
         }
         data.update(overrides)
         return data
@@ -1163,7 +1201,7 @@ class SourceManagementTests(TestCase):
         created = Source.objects.get(key="zz")
         self.assertEqual(created.parser_key, "shopify")
 
-    def test_create_source_rejects_missing_term(self):
+    def test_create_source_rejects_missing_term_for_get(self):
         response = self.client.post(
             reverse("add_source"),
             self._valid_data(base_search_url="https://example.com/search/keyword/foo"),
@@ -1171,6 +1209,61 @@ class SourceManagementTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Source.objects.filter(key="zz").exists())
         self.assertIn("base_search_url", response.context["form"].errors)
+
+    def test_create_post_source_without_term_in_url(self):
+        body = {
+            "context": {"mode": "buy", "page": 1, "per_page": 24},
+            "q": "{term}",
+        }
+        response = self.client.post(
+            reverse("add_source"),
+            self._valid_data(
+                key="wt",
+                name="POST JSON Store",
+                parser_key="wtfilters",
+                http_method="POST",
+                base_search_url="https://example.com/api/search",
+                request_body_template=json.dumps(body),
+                request_headers=json.dumps(
+                    {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "Origin": "https://example.com",
+                        "Referer": "https://example.com/search?q={term}",
+                    }
+                ),
+            ),
+        )
+        self.assertEqual(response.status_code, 302)
+        created = Source.objects.get(key="wt")
+        self.assertEqual(created.http_method, Source.HttpMethod.POST)
+        self.assertEqual(created.request_body_template["q"], "{term}")
+        self.assertEqual(created.max_pages, 1)
+
+    def test_edit_post_source_preserves_url_without_term(self):
+        Source.objects.create(
+            key="wt",
+            name="POST JSON Store",
+            parser_key="wtfilters",
+            http_method=Source.HttpMethod.POST,
+            base_search_url="https://example.com/api/search",
+            request_body_template={"q": "{term}"},
+        )
+        response = self.client.post(
+            reverse("edit_source", args=["wt"]),
+            self._valid_data(
+                key="wt",
+                name="POST JSON Store (updated)",
+                parser_key="wtfilters",
+                http_method="POST",
+                base_search_url="https://example.com/api/search",
+                request_body_template='{"q": "{term}"}',
+                request_headers="{}",
+            ),
+        )
+        self.assertEqual(response.status_code, 302)
+        updated = Source.objects.get(key="wt")
+        self.assertEqual(updated.name, "POST JSON Store (updated)")
 
     def test_create_source_rejects_unknown_parser_key(self):
         response = self.client.post(

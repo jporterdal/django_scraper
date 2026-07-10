@@ -55,7 +55,7 @@ class Fetcher:
             total=3,
             backoff_factor=1,
             status_forcelist=[429, 503],
-            allowed_methods=["GET"],
+            allowed_methods=["GET", "POST"],
         )
         adapter = HTTPAdapter(max_retries=retry)
         self._session.mount("https://", adapter)
@@ -78,9 +78,18 @@ class Fetcher:
         logger.debug("Rate limit pause %.2fs before next request", pause)
         time.sleep(pause)
 
-    def get(self, url, headers=None):
-        logger.info("GET %s", url)
-        response = self._session.get(url, timeout=self.timeout, headers=headers)
+    def request(self, method, url, json=None, headers=None):
+        method_upper = method.upper()
+        logger.info("%s %s", method_upper, url)
+        if method_upper == "GET":
+            response = self._session.get(url, timeout=self.timeout, headers=headers)
+        elif method_upper == "POST":
+            response = self._session.post(
+                url, json=json, timeout=self.timeout, headers=headers
+            )
+        else:
+            raise ValueError(f"Unsupported HTTP method: {method!r}")
+
         if response.status_code in (403, 429):
             logger.warning(
                 "HTTP %s from %s — possible bot detection or rate limiting",
@@ -93,6 +102,12 @@ class Fetcher:
             logger.debug("HTTP %s from %s", response.status_code, url)
         self._enforce_size_cap(response, url)
         return response
+
+    def get(self, url, headers=None):
+        return self.request("GET", url, headers=headers)
+
+    def post(self, url, json=None, headers=None):
+        return self.request("POST", url, json=json, headers=headers)
 
     def _enforce_size_cap(self, response, url):
         """Reject responses larger than ``max_response_bytes``.

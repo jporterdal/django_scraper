@@ -1,0 +1,6 @@
+For each step in Phase 4 of @plan.md , plan everything needed to fully implement that step and place the plans in @@ under separate headers. Headers should follow the format "Phase 4: Step X" and instructions for implementing each step of Phase 4 should be in a separate section of the file. Ensure that clear instructions are given, appropriate for later being ingested later by an agent to successfully complete the implementation of each step separately and independently. Make note of any dependencies between steps to allow agents to operate asynchronously. Allow for the possibility of squashing any Django migrations into a single migration file given that I do not care about data in the local/dev DB and this project is not yet deployed. Ensure that rules are included at the top of @@@ to direct agents to only edit their own subsections of the file and to use this command for the environment in all steps:
+```bash
+source /home/ross/work/django_scraper/venv/bin/activate
+cd /home/ross/work/django_scraper
+python manage.py test tracking
+```
