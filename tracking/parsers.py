@@ -33,6 +33,13 @@ class JSONSearchParser:
         """
         return None
 
+    def next_page_body(self, response, current_body, page_number):
+        """Return the POST body for the next page, or None when there is no next page.
+
+        Default is single-page; POST JSON subclasses override for body-based pagination.
+        """
+        return None
+
     def parse_data(self, data):
         raise NotImplementedError
 
@@ -105,12 +112,12 @@ class CCSearchParser(HTMLResponseParserMixin, SearchParser):
     def read_instock(self, data):
         pattern = ".*?(\S.*\S).*?"
         m = re.match(pattern, data, re.DOTALL)  # Instruct re to include endlines in [.]
-        try:
-            self.instock = m[1].lower() == "In Store - Available for Pickup".lower()
-        except:
-            return False  # Not successful
+        if not m:
+            self.instock = False
+            return False
 
-        return True  # Successful
+        self.instock = m.group(1).lower() == "In Store - Available for Pickup".lower()
+        return True
 
 
 
@@ -175,6 +182,9 @@ class WtFiltersParser(JSONSearchParser):
                 instock=row.get("in_stock"),
                 category=row.get("subcategory") or row.get("category", ""),
             )
+
+    def next_page_body(self, response, current_body, page_number):
+        return None
 
 
 class StorepassParser(JSONSearchParser):

@@ -56,7 +56,11 @@ class Source(models.Model):
 
     max_pages = models.PositiveSmallIntegerField(
         default=1,
-        verbose_name="Max pages to fetch per search (1 = single page)",
+        verbose_name=(
+            "Max pages to fetch per search (1 = single page). GET sources paginate "
+            "via parser ``next_page_url``; POST sources require parser "
+            "``next_page_body`` support."
+        ),
     )
 
     class HttpMethod(models.TextChoices):
@@ -263,6 +267,10 @@ class WebUpdate(models.Model):
         default=0,
         verbose_name="Price results stored by this run",
     )
+    skipped_duplicate_count = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Parsed results skipped as unchanged duplicates this run",
+    )
     error_count = models.PositiveIntegerField(
         default=0,
         verbose_name="Failed searches in this run",
@@ -277,6 +285,7 @@ class FetchJob(models.Model):
         CONFIG_ERROR = "config_error", "Configuration error"
         EMPTY = "empty", "No results"
         OVERSIZED = "oversized", "Response too large"
+        BLOCKED = "blocked", "Blocked"
 
     webupdate = models.ForeignKey(
         WebUpdate,
@@ -291,7 +300,16 @@ class FetchJob(models.Model):
     http_status = models.PositiveSmallIntegerField(null=True, blank=True)
     error_message = models.TextField(blank=True, default="")
     duration_ms = models.PositiveIntegerField(default=0)
+    # Parsed count from the parser (pre-dedup). Compare stored_count for rows inserted.
     result_count = models.PositiveSmallIntegerField(default=0)
+    stored_count = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name="SearchResult rows stored for this job after dedup",
+    )
+
+    @property
+    def skipped_count(self):
+        return max(0, self.result_count - self.stored_count)
 
     class Meta:
         indexes = [

@@ -25,6 +25,11 @@ urlpatterns = [
     path("item_source/<int:pk>/delete/", views.ItemSourceDeleteView.as_view(), name="delete_item_source"),
     # Scrape-run history (unchanged name). Schedules live under /schedules/.
     path("view_updates/", views.WebUpdateListView.as_view(), name="view_updates"),
+    path(
+        "view_updates/<int:pk>/jobs/",
+        views.WebUpdateFetchJobsPartialView.as_view(),
+        name="webupdate_fetch_jobs",
+    ),
     # Recurring schedules (Phase 3 Step 4). ``add_update`` is kept as an alias
     # for the schedule create view so existing links keep resolving.
     path("add_update/", views.UpdateScheduleCreateView.as_view(), name="add_update"),

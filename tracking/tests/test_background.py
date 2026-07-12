@@ -7,14 +7,16 @@ it inline in-process. All fetches are mocked; there is no network access.
 
 from unittest.mock import MagicMock, patch
 
-from django.test import Client, TestCase
+from django.test import TestCase
 from django.urls import reverse
 
 from huey.contrib.djhuey import HUEY
 
-from .models import ItemSource, SearchableItem, SearchResult, Source, WebUpdate
-from .scrape import FetchOutcome
-from .tasks import run_web_update_task
+from tracking.models import SearchResult, WebUpdate
+from tracking.tests.factories import make_item, make_item_source
+from tracking.tests.base import AuthedClientTestCase, LinkedSourceTestCase
+from tracking.scrape import FetchOutcome
+from tracking.tasks import run_web_update_task
 
 
 def _ok_outcome(result_count=0):
@@ -29,20 +31,7 @@ def _mock_parser(results):
     return parser
 
 
-class BackgroundUpdateTests(TestCase):
-    def setUp(self):
-        self.client = Client()
-        self.source, _ = Source.objects.update_or_create(
-            key="cc",
-            defaults={
-                "name": "Test Source",
-                "parser_key": "cc",
-                "base_search_url": "https://example.com/search?s={term}",
-            },
-        )
-        self.item = SearchableItem.objects.create(text="test item", active=True)
-        ItemSource.objects.create(item=self.item, source=self.source)
-
+class BackgroundUpdateTests(LinkedSourceTestCase):
     def test_huey_runs_in_immediate_mode(self):
         # Guards the "no Redis needed for tests" contract for Step 3.
         self.assertTrue(HUEY.immediate)
@@ -76,8 +65,8 @@ class BackgroundUpdateTests(TestCase):
     @patch("tracking.scrape._run_parser_search")
     def test_task_scopes_to_item_ids(self, mock_run_parser, _mock_fetcher):
         # A second active item-source that must NOT be searched when scoped.
-        other = SearchableItem.objects.create(text="other item", active=True)
-        ItemSource.objects.create(item=other, source=self.source)
+        other = make_item(text="other item", active=True)
+        make_item_source(other, self.source)
         mock_run_parser.return_value = _ok_outcome(result_count=0)
 
         webupdate = WebUpdate.objects.create(
@@ -116,10 +105,7 @@ class BackgroundUpdateTests(TestCase):
         self.assertIsNone(result())
 
 
-class UpdateProgressViewTests(TestCase):
-    def setUp(self):
-        self.client = Client()
-
+class UpdateProgressViewTests(AuthedClientTestCase):
     def test_progress_running_keeps_polling(self):
         webupdate = WebUpdate.objects.create(
             status=WebUpdate.Status.RUNNING,

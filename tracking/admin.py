@@ -26,9 +26,16 @@ class SourceAdmin(admin.ModelAdmin):
 
 @admin.register(ItemSource)
 class ItemSourceAdmin(admin.ModelAdmin):
-    list_display = ["item", "source", "url_suffix"]
+    list_display = ["item", "source", "url_suffix", "pinned_url"]
     list_filter = ["source"]
-    fields = ["item", "source", "url_suffix", "title_include_patterns", "title_exclude_patterns"]
+    fields = [
+        "item",
+        "source",
+        "url_suffix",
+        "pinned_url",
+        "title_include_patterns",
+        "title_exclude_patterns",
+    ]
 
 
 @admin.register(WebUpdate)

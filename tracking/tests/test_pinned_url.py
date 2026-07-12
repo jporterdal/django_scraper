@@ -9,25 +9,27 @@ from unittest.mock import MagicMock, patch
 
 from django.test import TestCase
 
-from .forms import ItemSourceForm
-from .models import ItemSource, SearchableItem, Source
-from .scrape import run_web_update
+from tracking.forms import ItemSourceForm
+from tracking.models import ItemSource, Source
+from tracking.scrape import run_web_update
+from tracking.tests.factories import make_item, make_item_source, make_source
 
 
 class PinnedUrlScrapeTests(TestCase):
-    def setUp(self):
-        self.source = Source.objects.create(
-            name="GET Source",
+    @classmethod
+    def setUpTestData(cls):
+        cls.source = make_source(
             key="get",
+            name="GET Source",
             parser_key="shopify",
             base_search_url="https://example.com/search?q={term}",
         )
-        self.item = SearchableItem.objects.create(text="test item", active=True)
-        self.pinned = "https://example.com/product/12345"
-        self.item_source = ItemSource.objects.create(
-            item=self.item,
-            source=self.source,
-            pinned_url=self.pinned,
+        cls.item = make_item()
+        cls.pinned = "https://example.com/product/12345"
+        cls.item_source = make_item_source(
+            cls.item,
+            cls.source,
+            pinned_url=cls.pinned,
         )
 
     @patch("tracking.scrape._run_parser_search")

@@ -8,23 +8,32 @@ NULL without error. No network.
 import json
 from unittest.mock import MagicMock, patch
 
-from django.test import Client, TestCase
+from django.test import TestCase
 from django.urls import reverse
 
-from .models import ItemSource, SearchResult, SearchableItem, Source, WebUpdate
-from .scrape import run_web_update
+from tracking.models import ItemSource, SearchResult, Tag
+from tracking.tests.base import AuthedClientTestCase
+from tracking.tests.factories import (
+    make_item,
+    make_item_source,
+    make_search_result,
+    make_source,
+    make_web_update,
+)
+from tracking.scrape import run_web_update
 
 
 class PriceNullScrapeTests(TestCase):
-    def setUp(self):
-        self.source = Source.objects.create(
-            name="GET Source",
+    @classmethod
+    def setUpTestData(cls):
+        cls.source = make_source(
             key="get",
+            name="GET Source",
             parser_key="shopify",
             base_search_url="https://example.com/search?q={term}",
         )
-        self.item = SearchableItem.objects.create(text="test item", active=True)
-        ItemSource.objects.create(item=self.item, source=self.source)
+        cls.item = make_item()
+        cls.item_source = make_item_source(cls.item, cls.source)
 
     @patch("tracking.scrape._run_parser_search")
     def test_out_of_stock_results_store_null_price(self, mock_run_parser):
@@ -67,37 +76,38 @@ class PriceNullScrapeTests(TestCase):
         self.assertEqual(out_of_stock.instock, 0)
 
 
-class PriceNullDisplayExportTests(TestCase):
-    def setUp(self):
-        self.client = Client()
-        self.source = Source.objects.create(
-            name="GET Source",
+class PriceNullDisplayExportTests(AuthedClientTestCase):
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.source = make_source(
             key="get",
+            name="GET Source",
             parser_key="shopify",
             base_search_url="https://example.com/search?q={term}",
         )
-        self.item = SearchableItem.objects.create(text="widget", active=True)
-        self.update = WebUpdate.objects.create()
+        cls.item = make_item(text="widget", active=True)
+        cls.update = make_web_update()
 
-        SearchResult.objects.create(
+        make_search_result(
+            cls.item,
+            cls.source,
+            cls.update,
             title="In Stock Widget",
             search_term="widget",
             price=19.99,
             category="Hardware",
             instock=1,
-            item=self.item,
-            update=self.update,
-            source=self.source,
         )
-        SearchResult.objects.create(
+        make_search_result(
+            cls.item,
+            cls.source,
+            cls.update,
             title="Out of Stock Widget",
             search_term="widget",
             price=None,
             category="Hardware",
             instock=0,
-            item=self.item,
-            update=self.update,
-            source=self.source,
         )
 
     def test_item_detail_renders_null_price_without_error(self):

@@ -3,9 +3,10 @@ from unittest.mock import MagicMock
 
 from django.test import SimpleTestCase, TestCase
 
-from .fetcher import Fetcher, ResponseTooLargeError
-from .models import FetchJob, ItemSource, SearchableItem, Source
-from .scrape import run_web_update
+from tracking.fetcher import Fetcher, ResponseTooLargeError
+from tracking.models import FetchJob
+from tracking.scrape import run_web_update
+from tracking.tests.factories import make_item, make_item_source, make_source
 
 
 class FakeResponse:
@@ -94,15 +95,16 @@ SHOPIFY_PAGE = {
 
 
 class PayloadSizeOrchestratorTests(TestCase):
-    def setUp(self):
-        self.source = Source.objects.create(
-            name="Shopify Source",
+    @classmethod
+    def setUpTestData(cls):
+        cls.source = make_source(
             key="shop",
+            name="Shopify Source",
             parser_key="shopify",
             base_search_url="https://example.com/search?q={term}",
         )
-        self.item = SearchableItem.objects.create(text="test item", active=True)
-        ItemSource.objects.create(item=self.item, source=self.source)
+        cls.item = make_item()
+        cls.item_source = make_item_source(cls.item, cls.source)
 
     def test_oversized_response_recorded_and_counted_as_error(self):
         fetcher = MagicMock()
@@ -119,8 +121,8 @@ class PayloadSizeOrchestratorTests(TestCase):
         self.assertIn("too large", job.error_message)
 
     def test_run_continues_for_other_items_after_oversized(self):
-        item_two = SearchableItem.objects.create(text="second item", active=True)
-        ItemSource.objects.create(item=item_two, source=self.source)
+        item_two = make_item(text="second item", active=True)
+        make_item_source(item_two, self.source)
 
         fetcher = MagicMock()
         fetcher.get.side_effect = [

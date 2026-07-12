@@ -2,7 +2,7 @@ import re
 
 from django import forms
 
-from .models import ItemSource, Source, UpdateSchedule
+from .models import ItemSource, SearchableItem, Source, UpdateSchedule
 from .parsers import sources as parser_registry
 
 
@@ -72,6 +72,39 @@ def _list_to_lines(value):
     return value or ""
 
 
+def _apply_bootstrap_form_classes(form):
+    """Add Bootstrap widget classes to every field on a form."""
+    for field in form.fields.values():
+        widget = field.widget
+        if isinstance(widget, forms.CheckboxInput):
+            css = "form-check-input"
+        elif isinstance(widget, (forms.Select, forms.SelectMultiple)):
+            css = "form-select"
+        else:
+            css = "form-control"
+        existing = widget.attrs.get("class", "")
+        widget.attrs["class"] = (existing + " " + css).strip()
+
+
+class SearchableItemForm(forms.ModelForm):
+    """Form for editing a SearchableItem (search term, priority, active, tags)."""
+
+    class Meta:
+        model = SearchableItem
+        fields = ["text", "priority", "active", "tags"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        _apply_bootstrap_form_classes(self)
+
+
+class SearchableItemCreateForm(SearchableItemForm):
+    """Create view: search text only."""
+
+    class Meta(SearchableItemForm.Meta):
+        fields = ["text"]
+
+
 class ItemSourceForm(forms.ModelForm):
     """Form for editing an ItemSource, including include/exclude title patterns.
 
@@ -108,10 +141,7 @@ class ItemSourceForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-        for name, field in self.fields.items():
-            css_class = field.widget.attrs.get("class", "")
-            field.widget.attrs["class"] = (css_class + " form-control").strip()
+        _apply_bootstrap_form_classes(self)
 
         # ModelForm pre-populates self.initial from the instance with the raw
         # JSON lists; convert those to newline-joined text for the textareas.
@@ -183,22 +213,11 @@ class SourceForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        _apply_bootstrap_form_classes(self)
 
-        for name, field in self.fields.items():
-            widget = field.widget
-            if isinstance(widget, forms.CheckboxInput):
-                css = "form-check-input"
-            elif isinstance(widget, forms.Select):
-                css = "form-select"
-            else:
-                css = "form-control"
-            existing = widget.attrs.get("class", "")
-            widget.attrs["class"] = (existing + " " + css).strip()
-            if name in ("request_body_template", "request_headers"):
-                widget.attrs.setdefault("class", "")
-                widget.attrs["class"] = (
-                    widget.attrs["class"] + " font-monospace"
-                ).strip()
+        for name in ("request_body_template", "request_headers"):
+            widget = self.fields[name].widget
+            widget.attrs["class"] = (widget.attrs.get("class", "") + " font-monospace").strip()
 
         self.fields["page_size"].required = False
         self.fields["max_pages"].required = False
@@ -260,14 +279,4 @@ class UpdateScheduleForm(forms.ModelForm):
         # "All active items" reads better than the default empty label for the
         # optional tag scope.
         self.fields["tag"].empty_label = "All active items"
-
-        for name, field in self.fields.items():
-            widget = field.widget
-            if isinstance(widget, forms.CheckboxInput):
-                css = "form-check-input"
-            elif isinstance(widget, forms.Select):
-                css = "form-select"
-            else:
-                css = "form-control"
-            existing = widget.attrs.get("class", "")
-            widget.attrs["class"] = (existing + " " + css).strip()
+        _apply_bootstrap_form_classes(self)

@@ -10,10 +10,11 @@ from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase, TestCase
 
-from .fetcher import Fetcher, ResponseTooLargeError
-from .models import ItemSource, SearchableItem, Source
-from .scrape import _run_parser_search, run_web_update
-from .test_payload_size import FakeResponse
+from tracking.fetcher import Fetcher, ResponseTooLargeError
+from tracking.models import ItemSource, Source
+from tracking.scrape import _run_parser_search, run_web_update
+from tracking.tests.factories import make_item, make_item_source, make_source
+from tracking.tests.test_payload_size import FakeResponse
 
 
 SHOPIFY_PAGE = {
@@ -232,6 +233,7 @@ class RunParserSearchPostTests(SimpleTestCase):
     def test_post_uses_fetcher_post_with_body(self):
         parser = MagicMock()
         parser.results = []
+        parser.next_page_body.return_value = None
         fetcher = MagicMock()
         response = FakeResponse(content=json.dumps(SHOPIFY_PAGE).encode())
         fetcher.post.return_value = response
@@ -260,6 +262,7 @@ class RunParserSearchPostTests(SimpleTestCase):
         parser = MagicMock()
         parser.results = []
         parser.next_page_url.return_value = "https://example.com/page/2"
+        parser.next_page_body.return_value = None
         fetcher = MagicMock()
         fetcher.post.return_value = FakeResponse(content=b"{}")
         fetcher.get.return_value = FakeResponse(content=b"{}")
@@ -277,10 +280,11 @@ class RunParserSearchPostTests(SimpleTestCase):
 
 
 class RunWebUpdatePostTests(TestCase):
-    def setUp(self):
-        self.post_source = Source.objects.create(
-            name="POST Source",
+    @classmethod
+    def setUpTestData(cls):
+        cls.post_source = make_source(
             key="post",
+            name="POST Source",
             parser_key="shopify",
             base_search_url="https://example.com/api/search",
             http_method=Source.HttpMethod.POST,
@@ -290,14 +294,14 @@ class RunWebUpdatePostTests(TestCase):
                 "Referer": "https://example.com/search?q={term}",
             },
         )
-        self.get_source = Source.objects.create(
-            name="GET Source",
+        cls.get_source = make_source(
             key="get",
+            name="GET Source",
             parser_key="shopify",
             base_search_url="https://example.com/search?q={term}",
         )
-        self.item = SearchableItem.objects.create(text="test item", active=True)
-        ItemSource.objects.create(item=self.item, source=self.post_source)
+        cls.item = make_item()
+        cls.item_source = make_item_source(cls.item, cls.post_source)
 
     @patch("tracking.scrape._run_parser_search")
     def test_post_source_passes_method_and_body(self, mock_run_parser):

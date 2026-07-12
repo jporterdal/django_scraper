@@ -1,15 +1,11 @@
 {% extends "tracking/base.html" %}
 
-{% block title %}{{ form_title }}{% endblock %}
+{% block title %}Log in{% endblock %}
 
 {% block content %}
-    <h1 class="text-center mb-4">{{ form_title }}</h1>
+    <h1 class="text-center mb-4">Log in</h1>
 
-    <p class="text-center mb-4">
-        <a href="{% url 'view_sources' %}">Back to Sources</a>
-    </p>
-
-    <div class="card mx-auto" style="max-width: 48rem;">
+    <div class="card mx-auto" style="max-width: 40rem;">
         <div class="card-body">
             <form method="post">
                 {% csrf_token %}
@@ -20,15 +16,12 @@
                     <div class="mb-3">
                         <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
                         {{ field }}
-                        {% if field.help_text %}
-                            <div class="form-text">{{ field.help_text }}</div>
-                        {% endif %}
                         {% if field.errors %}
                             <div class="text-danger small">{{ field.errors }}</div>
                         {% endif %}
                     </div>
                 {% endfor %}
-                <button type="submit" class="btn btn-primary">{{ submit_label }}</button>
+                <button type="submit" class="btn btn-primary">Log in</button>
             </form>
         </div>
     </div>

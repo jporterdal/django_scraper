@@ -10,19 +10,20 @@ from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from django import forms
-from django.test import Client, TestCase, override_settings
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from . import tasks
-from .forms import UpdateScheduleForm
-from .models import (
+from tracking import tasks
+from tracking.forms import UpdateScheduleForm
+from tracking.models import (
     ItemSource,
     SearchableItem,
-    Source,
     Tag,
     UpdateSchedule,
     WebUpdate,
 )
+from tracking.tests.base import AuthedClientTestCase
+from tracking.tests.factories import make_item, make_item_source, make_linked_item, make_source
 
 HALIFAX = ZoneInfo("America/Halifax")
 
@@ -119,19 +120,12 @@ class DueCheckTests(TestCase):
 
 @override_settings(TIME_ZONE="America/Halifax", USE_TZ=True)
 class DispatcherTests(TestCase):
-    def setUp(self):
-        # A default "cc" Source is seeded by migration 0002, so update_or_create
-        # rather than create to avoid a UNIQUE collision on the primary key.
-        self.source, _ = Source.objects.update_or_create(
-            key="cc",
-            defaults={
-                "name": "CC",
-                "parser_key": "cc",
-                "base_search_url": "https://example.com/search?s={term}",
-            },
+    @classmethod
+    def setUpTestData(cls):
+        cls.source, cls.item, cls.item_source = make_linked_item(
+            item_text="widget",
+            source=make_source(name="CC"),
         )
-        self.item = SearchableItem.objects.create(text="widget", active=True)
-        ItemSource.objects.create(item=self.item, source=self.source)
 
     def test_get_due_schedules_filters_enabled_and_due(self):
         due = UpdateSchedule.objects.create(
@@ -166,8 +160,8 @@ class DispatcherTests(TestCase):
     def test_tag_scoped_schedule_limits_items(self):
         tag = Tag.objects.create(name="gpu")
         self.item.tags.add(tag)
-        other = SearchableItem.objects.create(text="other", active=True)
-        ItemSource.objects.create(item=other, source=self.source)
+        other = make_item(text="other", active=True)
+        make_item_source(other, self.source)
 
         sched = UpdateSchedule.objects.create(
             name="Tagged", frequency=DAILY, anchor_time=time(9, 0), tag=tag
@@ -215,10 +209,7 @@ class DispatcherTests(TestCase):
         self.assertIsNone(mock_run.call_args.kwargs["items"])
 
 
-class ScheduleCRUDViewTests(TestCase):
-    def setUp(self):
-        self.client = Client()
-
+class ScheduleCRUDViewTests(AuthedClientTestCase):
     def test_list_view_shows_schedules(self):
         UpdateSchedule.objects.create(name="Nightly", anchor_time=time(9, 0))
         response = self.client.get(reverse("view_schedules"))

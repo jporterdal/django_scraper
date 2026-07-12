@@ -1,58 +1,61 @@
 import json
 
-from django.test import Client, TestCase
+from django.test import TestCase
 from django.urls import reverse
 
-from .models import SearchableItem, SearchResult, Source, WebUpdate
-from .views import EXPORT_FIELDNAMES
+from tracking.models import SearchableItem, SearchResult, WebUpdate
+from tracking.tests.base import AuthedClientTestCase
+from tracking.tests.factories import (
+    make_item,
+    make_search_result,
+    make_source,
+    make_web_update,
+)
+from tracking.views import EXPORT_FIELDNAMES
 
 
-class ExportTests(TestCase):
+class ExportTests(AuthedClientTestCase):
     """Phase 3 Step 6 — per-item CSV/JSON price-history export endpoints."""
 
-    def setUp(self):
-        self.client = Client()
-        self.source_cc, _ = Source.objects.update_or_create(
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.source_cc = make_source(
             key="cc",
-            defaults={
-                "name": "Canada Computers",
-                "parser_key": "cc",
-                "base_search_url": "https://example.com/search?s={term}",
-            },
+            name="Canada Computers",
+            parser_key="cc",
+            base_search_url="https://example.com/search?s={term}",
         )
-        self.source_f2f, _ = Source.objects.update_or_create(
+        cls.source_f2f = make_source(
             key="f2f",
-            defaults={
-                "name": "Face to Face",
-                "parser_key": "shopify",
-                "base_search_url": "https://example.com/f2f?q={term}",
-            },
+            name="Face to Face",
+            parser_key="shopify",
+            base_search_url="https://example.com/f2f?q={term}",
         )
-        self.item = SearchableItem.objects.create(text="rtx 5070", active=True)
-        self.empty_item = SearchableItem.objects.create(text="no results", active=True)
+        cls.item = make_item(text="rtx 5070", active=True)
+        cls.empty_item = make_item(text="no results", active=True)
 
-        self.update = WebUpdate.objects.create()
+        cls.update = make_web_update()
 
-        # Two results for the same update: one per source.
-        SearchResult.objects.create(
+        make_search_result(
+            cls.item,
+            cls.source_cc,
+            cls.update,
             title="ASUS RTX 5070",
             search_term="rtx 5070",
             price=799.99,
             category="GPUs",
             instock=1,
-            item=self.item,
-            update=self.update,
-            source=self.source_cc,
         )
-        SearchResult.objects.create(
+        make_search_result(
+            cls.item,
+            cls.source_f2f,
+            cls.update,
             title="MSI RTX 5070",
             search_term="rtx 5070",
             price=None,
             category="Video Cards",
             instock=0,
-            item=self.item,
-            update=self.update,
-            source=self.source_f2f,
         )
 
     def test_csv_export_ok(self):

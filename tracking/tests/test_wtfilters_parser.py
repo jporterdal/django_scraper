@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 from django.conf import settings
 from django.test import SimpleTestCase
 
-from .parsers import WtFiltersParser, sources
+from tracking.parsers import WtFiltersParser, sources
 
 
 def _json_response(payload, status_code=200):

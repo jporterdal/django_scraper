@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+from collections import defaultdict
 from dataclasses import dataclass
 
 from . import parsers
@@ -18,6 +19,7 @@ class FetchOutcome:
     http_status: int | None
     error_message: str
     result_count: int
+    blocked: bool = False
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,17 @@ def _truncate_error_message(message):
     return message
 
 
+def _response_looks_blocked(response):
+    """True when a JSON parser likely received an HTML block/challenge page."""
+    content_type = response.headers.get("Content-Type", "")
+    if "text/html" in content_type.lower():
+        return True
+    text = response.text if hasattr(response, "text") else ""
+    stripped = text.lstrip()
+    lower_prefix = stripped[:20].lower()
+    return lower_prefix.startswith("<!doctype") or lower_prefix.startswith("<html")
+
+
 def _record_fetch_job(
     webupdate,
     item,
@@ -46,7 +59,7 @@ def _record_fetch_job(
     duration_ms=0,
     result_count=0,
 ):
-    FetchJob.objects.create(
+    return FetchJob.objects.create(
         webupdate=webupdate,
         item=item,
         source=source,
@@ -60,6 +73,63 @@ def _record_fetch_job(
     )
 
 
+def _build_latest_snapshot_map(item_ids, exclude_update_id):
+    """Latest stored (price, instock) per (item, source, title) from prior runs."""
+    snapshots = {}
+    if not item_ids:
+        return snapshots
+    rows = (
+        SearchResult.objects.filter(item_id__in=item_ids)
+        .exclude(update_id=exclude_update_id)
+        .order_by("-update__timestamp", "-id")
+        .values_list("item_id", "source_id", "title", "price", "instock")
+    )
+    for item_id, source_id, title, price, instock in rows:
+        key = (item_id, source_id, title)
+        if key not in snapshots:
+            snapshots[key] = (price, instock)
+    return snapshots
+
+
+def _deduplicate_result_kwargs(kws, webupdate):
+    """Filter parsed candidates against prior snapshots and within-batch duplicates."""
+    if not kws:
+        return [], 0, {}, {}
+
+    item_ids = {kw["item"].pk for kw in kws}
+    snapshots = _build_latest_snapshot_map(item_ids, exclude_update_id=webupdate.pk)
+    batch_kept = {}
+    filtered = []
+    skipped = 0
+    stored_by_job = defaultdict(int)
+    skipped_by_job = defaultdict(int)
+
+    for kw in kws:
+        key = (kw["item"].pk, kw["source"].pk, kw["title"])
+        candidate = (kw["price"], kw["instock"])
+        job_id = kw["_fetch_job_id"]
+
+        if snapshots.get(key) == candidate:
+            skipped += 1
+            skipped_by_job[job_id] += 1
+            continue
+
+        if key in batch_kept and batch_kept[key] == candidate:
+            skipped += 1
+            skipped_by_job[job_id] += 1
+            continue
+
+        filtered.append(kw)
+        batch_kept[key] = candidate
+        stored_by_job[job_id] += 1
+
+    return filtered, skipped, stored_by_job, skipped_by_job
+
+
+def _search_result_kwargs(kw):
+    return {key: value for key, value in kw.items() if not key.startswith("_")}
+
+
 def _run_parser_search(
     parser, fetcher, url, headers=None, max_pages=1, method="GET", body=None
 ):
@@ -71,13 +141,14 @@ def _run_parser_search(
     page requests for rate limiting. Pages already gathered are kept if a later page
     fails (non-200). When ``max_pages == 1`` this is byte-identical to a single fetch.
 
-    POST sources issue ``fetcher.post`` on page 1 with ``json=body``; pagination is
-  single-page only (``max_pages`` is effectively 1 for POST).
+    POST sources issue ``fetcher.post`` on page 1 with ``json=body``; pages
+    ``2..max_pages`` reuse the same URL with bodies from ``parser.next_page_body``
+    when that method returns a dict (otherwise single-page).
     """
     parser.url = url
+    current_body = body
     if method == "POST":
         response = fetcher.post(url, json=body, headers=headers)
-        max_pages = 1
     else:
         response = fetcher.get(url, headers=headers)
 
@@ -87,28 +158,58 @@ def _run_parser_search(
             http_status=response.status_code,
             error_message=f"HTTP {response.status_code}",
             result_count=0,
+            blocked=response.status_code in (403, 429),
         )
 
-    parser.parse_response(response)
+    try:
+        parser.parse_response(response)
+    except (json.JSONDecodeError, ValueError) as exc:
+        if _response_looks_blocked(response):
+            return FetchOutcome(
+                ok=False,
+                http_status=response.status_code,
+                error_message=f"Blocked response (expected JSON): {exc}",
+                result_count=0,
+                blocked=True,
+            )
+        raise
 
     current_url = url
     for page in range(2, max_pages + 1):
-        next_url = parser.next_page_url(response, current_url, page)
-        if next_url is None:
-            break
-        fetcher.wait()
-        next_response = fetcher.get(next_url, headers=headers)
-        if next_response.status_code != 200:
-            logger.warning(
-                "Pagination stopped at page %d (%s): HTTP %s — keeping earlier pages",
-                page,
-                next_url,
-                next_response.status_code,
-            )
-            break
-        parser.parse_next_page(next_response)
-        current_url = next_url
-        response = next_response
+        if method == "POST":
+            next_body = parser.next_page_body(response, current_body, page)
+            if next_body is None:
+                break
+            fetcher.wait()
+            next_response = fetcher.post(url, json=next_body, headers=headers)
+            if next_response.status_code != 200:
+                logger.warning(
+                    "POST pagination stopped at page %d (%s): HTTP %s — keeping earlier pages",
+                    page,
+                    url,
+                    next_response.status_code,
+                )
+                break
+            parser.parse_next_page(next_response)
+            current_body = next_body
+            response = next_response
+        else:
+            next_url = parser.next_page_url(response, current_url, page)
+            if next_url is None:
+                break
+            fetcher.wait()
+            next_response = fetcher.get(next_url, headers=headers)
+            if next_response.status_code != 200:
+                logger.warning(
+                    "Pagination stopped at page %d (%s): HTTP %s — keeping earlier pages",
+                    page,
+                    next_url,
+                    next_response.status_code,
+                )
+                break
+            parser.parse_next_page(next_response)
+            current_url = next_url
+            response = next_response
 
     return FetchOutcome(
         ok=True,
@@ -150,6 +251,7 @@ def run_web_update(items=None, fetcher=None, webupdate=None):
     webupdate.completed_searches = 0
     webupdate.result_count = 0
     webupdate.error_count = 0
+    webupdate.skipped_duplicate_count = 0
     webupdate.save(
         update_fields=[
             "status",
@@ -157,6 +259,7 @@ def run_web_update(items=None, fetcher=None, webupdate=None):
             "completed_searches",
             "result_count",
             "error_count",
+            "skipped_duplicate_count",
         ]
     )
 
@@ -360,7 +463,9 @@ def run_web_update(items=None, fetcher=None, webupdate=None):
                         source,
                         search_term,
                         search_url,
-                        FetchJob.Status.HTTP_ERROR,
+                        FetchJob.Status.BLOCKED
+                        if outcome.blocked
+                        else FetchJob.Status.HTTP_ERROR,
                         http_status=outcome.http_status,
                         error_message=outcome.error_message,
                         duration_ms=duration_ms,
@@ -387,7 +492,7 @@ def run_web_update(items=None, fetcher=None, webupdate=None):
                     fetch_job_count += 1
                     continue
 
-                _record_fetch_job(
+                fetch_job = _record_fetch_job(
                     webupdate,
                     item,
                     source,
@@ -410,6 +515,9 @@ def run_web_update(items=None, fetcher=None, webupdate=None):
                         "instock": 1 if result["instock"] else 0,
                         "source": source,
                         "update": webupdate,
+                        "_fetch_job_id": fetch_job.pk,
+                        "_source_key": source.key,
+                        "_item_id": item.pk,
                     })
             finally:
                 # Persist incremental progress after each item-source so the
@@ -426,8 +534,39 @@ def run_web_update(items=None, fetcher=None, webupdate=None):
                     ]
                 )
 
-        if kws:
-            SearchResult.objects.bulk_create([SearchResult(**kw) for kw in kws])
+        filtered_kws, skipped_duplicate_count, stored_by_job, skipped_by_job = (
+            _deduplicate_result_kwargs(kws, webupdate)
+        )
+
+        for job_id, stored in stored_by_job.items():
+            FetchJob.objects.filter(pk=job_id).update(stored_count=stored)
+
+        fetch_jobs_by_id = {
+            job.pk: job
+            for job in FetchJob.objects.filter(webupdate=webupdate, pk__in=skipped_by_job)
+        }
+        for job_id, skipped_count in skipped_by_job.items():
+            if skipped_count <= 0:
+                continue
+            job = fetch_jobs_by_id.get(job_id)
+            if job is None:
+                continue
+            logger.info(
+                "%(source_key)s/item=%(item_id)s: %(parsed)d parsed, "
+                "%(stored)d stored (%(skipped)d unchanged)",
+                {
+                    "source_key": job.source_id,
+                    "item_id": job.item_id,
+                    "parsed": job.result_count,
+                    "stored": stored_by_job.get(job_id, 0),
+                    "skipped": skipped_count,
+                },
+            )
+
+        if filtered_kws:
+            SearchResult.objects.bulk_create(
+                [SearchResult(**_search_result_kwargs(kw)) for kw in filtered_kws]
+            )
     except Exception:
         webupdate.status = WebUpdate.Status.FAILED
         webupdate.error_count = error_count
@@ -437,28 +576,35 @@ def run_web_update(items=None, fetcher=None, webupdate=None):
         )
         raise
 
+    stored_count = len(filtered_kws) if kws else 0
     webupdate.status = WebUpdate.Status.DONE
     webupdate.completed_searches = search_count
-    webupdate.result_count = len(kws)
+    webupdate.result_count = stored_count
+    webupdate.skipped_duplicate_count = (
+        skipped_duplicate_count if kws else 0
+    )
     webupdate.error_count = error_count
     webupdate.save(
         update_fields=[
             "status",
             "completed_searches",
             "result_count",
+            "skipped_duplicate_count",
             "error_count",
         ]
     )
 
     stats = WebUpdateStats(
-        result_count=len(kws),
+        result_count=stored_count,
         error_count=error_count,
         search_count=search_count,
         fetch_job_count=fetch_job_count,
     )
     logger.info(
-        "Web update finished: %d result(s) stored, %d error(s), %d search(es) attempted",
+        "Web update finished: %d result(s) stored, %d unchanged skipped, "
+        "%d error(s), %d search(es) attempted",
         stats.result_count,
+        webupdate.skipped_duplicate_count,
         stats.error_count,
         stats.search_count,
     )

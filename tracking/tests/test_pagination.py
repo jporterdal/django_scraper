@@ -9,9 +9,10 @@ from unittest.mock import MagicMock
 
 from django.test import SimpleTestCase, TestCase
 
-from .models import ItemSource, SearchableItem, Source
-from .parsers import ShopifyParser, StorepassParser
-from .scrape import _run_parser_search, run_web_update
+from tracking.models import FetchJob, Source
+from tracking.parsers import ShopifyParser, StorepassParser
+from tracking.scrape import _run_parser_search, run_web_update
+from tracking.tests.factories import make_item, make_item_source, make_source
 
 
 def _json_response(payload, status_code=200):
@@ -209,8 +210,9 @@ class SinglePageRegressionTests(SimpleTestCase):
 
 
 class RunWebUpdatePaginationTests(TestCase):
-    def setUp(self):
-        self.source = Source.objects.create(
+    @classmethod
+    def setUpTestData(cls):
+        cls.source = make_source(
             key="f2f",
             name="Face to Face Games",
             parser_key="shopify",
@@ -220,8 +222,8 @@ class RunWebUpdatePaginationTests(TestCase):
             ),
             max_pages=3,
         )
-        self.item = SearchableItem.objects.create(text="Lightning Bolt", active=True)
-        ItemSource.objects.create(item=self.item, source=self.source)
+        cls.item = make_item(text="Lightning Bolt", active=True)
+        cls.item_source = make_item_source(cls.item, cls.source)
 
     def test_run_web_update_fetches_multiple_pages(self):
         fetcher = FakeFetcher(
@@ -234,9 +236,12 @@ class RunWebUpdatePaginationTests(TestCase):
 
         stats = run_web_update(fetcher=fetcher)
 
-        self.assertEqual(stats.result_count, 2)
+        self.assertEqual(stats.result_count, 1)
         self.assertEqual(stats.error_count, 0)
         self.assertEqual(len(fetcher.get_calls), 3)
+        job = FetchJob.objects.get()
+        self.assertEqual(job.result_count, 2)
+        self.assertEqual(job.stored_count, 1)
 
     def test_default_max_pages_is_single_page(self):
         self.source.max_pages = 1
@@ -245,5 +250,5 @@ class RunWebUpdatePaginationTests(TestCase):
 
         stats = run_web_update(fetcher=fetcher)
 
-        self.assertEqual(stats.result_count, 2)
+        self.assertEqual(stats.result_count, 1)
         self.assertEqual(len(fetcher.get_calls), 1)
