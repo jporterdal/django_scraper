@@ -407,7 +407,7 @@ class BulkAddHTTPTests(AuthedClientTestCase):
         response = self.client.get(reverse("bulk_add"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'name="tag"')
-        self.assertContains(response, "--- choose ---")
+        self.assertContains(response, "--- Choice Required ---")
         self.assertContains(response, 'name="search_terms"')
         self.assertContains(response, 'name="priority"')
         self.assertContains(response, 'name="allow_duplicate_text"')

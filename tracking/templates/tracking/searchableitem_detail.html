@@ -128,6 +128,10 @@
 
 <script>
     document.addEventListener('DOMContentLoaded', function () {
+        const rootStyles = getComputedStyle(document.documentElement);
+        const tickColor = (rootStyles.getPropertyValue('--bs-body-color') || '').trim() || '#212529';
+        const gridColor = (rootStyles.getPropertyValue('--bs-border-color') || '').trim() || 'rgba(0, 0, 0, 0.1)';
+        const hollowFill = (rootStyles.getPropertyValue('--bs-body-bg') || '').trim() || '#fff';
         const chartData = JSON.parse('{{ chart_data_json|default:"{}"|escapejs }}');
         Object.keys(chartData).forEach(function (sourceKey) {
             const series = chartData[sourceKey];
@@ -137,7 +141,7 @@
             }
             const pointStyles = series.point_styles || [];
             const pointBackgroundColors = pointStyles.map(function (style) {
-                return style === 'hollow' ? 'rgba(255, 255, 255, 1)' : 'rgba(52, 152, 219, 1)';
+                return style === 'hollow' ? hollowFill : 'rgba(52, 152, 219, 1)';
             });
             const pointBorderColors = pointStyles.map(function () {
                 return 'rgba(52, 152, 219, 1)';
@@ -169,7 +173,10 @@
                     maintainAspectRatio: false,
                     responsive: true,
                     plugins: {
-                        legend: { display: true },
+                        legend: {
+                            display: true,
+                            labels: { color: tickColor },
+                        },
                         tooltip: {
                             enabled: true,
                             callbacks: {
@@ -181,8 +188,16 @@
                         }
                     },
                     scales: {
-                        x: { display: true },
-                        y: { display: true }
+                        x: {
+                            display: true,
+                            ticks: { color: tickColor },
+                            grid: { color: gridColor },
+                        },
+                        y: {
+                            display: true,
+                            ticks: { color: tickColor },
+                            grid: { color: gridColor },
+                        }
                     }
                 }
             });
