@@ -3,7 +3,7 @@ from django.http import HttpResponse, JsonResponse
 from django.views.generic import DetailView, ListView
 from django.views.generic.edit import CreateView, DeleteView, UpdateView, View
 from django.urls import reverse
-from django.db.models import Count, Min, OuterRef, Subquery, F
+from django.db.models import Count, OuterRef, Q, Subquery
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
@@ -139,11 +139,49 @@ def _format_fetch_job_note(job):
     )
 
 
+def _source_price_points(stored_by_update, source_jobs):
+    """Chronological price points for one source: stored, carry-forward, orphans.
+
+    ``stored_by_update`` maps update_id → ``{"price", "timestamp", "kind": "stored"}``.
+    Returns a list of ``{"price", "timestamp", "kind"}`` oldest→newest. Shared by
+    list sparklines and the detail chart so point selection cannot drift.
+    """
+    points_by_update = {}
+    carry_price = None
+    for job in sorted(source_jobs, key=lambda j: j.webupdate.timestamp):
+        update_id = job.webupdate_id
+        stored = stored_by_update.get(update_id)
+        if stored is not None:
+            carry_price = stored["price"]
+            points_by_update[update_id] = {
+                "price": stored["price"],
+                "timestamp": job.webupdate.timestamp,
+                "kind": "stored",
+            }
+        elif (
+            job.status == FetchJob.Status.SUCCESS
+            and job.result_count > 0
+            and job.stored_count == 0
+            and carry_price is not None
+        ):
+            points_by_update[update_id] = {
+                "price": carry_price,
+                "timestamp": job.webupdate.timestamp,
+                "kind": "unchanged",
+            }
+
+    for update_id, stored in stored_by_update.items():
+        if update_id not in points_by_update:
+            points_by_update[update_id] = stored
+
+    return sorted(points_by_update.values(), key=lambda p: p["timestamp"])
+
+
 def _build_source_chart_series(item, results, fetch_jobs):
     """Per-source chart points: solid for stored rows, hollow for unchanged fetches."""
     stored_by_source_update = defaultdict(dict)
     for result in results:
-        if not result.instock:
+        if not result.instock or result.price is None:
             continue
         existing = stored_by_source_update[result.source_id].get(result.update_id)
         if existing is None or result.price < existing["price"]:
@@ -189,38 +227,13 @@ def _build_source_chart_series(item, results, fetch_jobs):
             if source_key is None:
                 continue
 
-        points_by_update = {}
-        carry_price = None
-        for job in sorted(source_jobs, key=lambda j: j.webupdate.timestamp):
-            update_id = job.webupdate_id
-            stored = stored_by_source_update.get(source_id, {}).get(update_id)
-            if stored is not None:
-                carry_price = stored["price"]
-                points_by_update[update_id] = {
-                    "price": stored["price"],
-                    "timestamp": job.webupdate.timestamp,
-                    "kind": "stored",
-                }
-            elif (
-                job.status == FetchJob.Status.SUCCESS
-                and job.result_count > 0
-                and job.stored_count == 0
-                and carry_price is not None
-            ):
-                points_by_update[update_id] = {
-                    "price": carry_price,
-                    "timestamp": job.webupdate.timestamp,
-                    "kind": "unchanged",
-                }
-
-        for update_id, stored in stored_by_source_update.get(source_id, {}).items():
-            if update_id not in points_by_update:
-                points_by_update[update_id] = stored
-
         if not source_jobs and source_id not in stored_by_source_update:
             continue
 
-        points = sorted(points_by_update.values(), key=lambda p: p["timestamp"])
+        points = _source_price_points(
+            stored_by_source_update.get(source_id, {}),
+            source_jobs,
+        )
 
         labels = []
         prices = []
@@ -296,39 +309,67 @@ class SearchableListView(ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        object_list = list(context["object_list"])
 
-        sr = (
-            SearchResult.objects.filter(instock=1)
-            .values("update", "item")
-            .annotate(
-                lowest_price=Min("price"),
-                timestamp=F("update__timestamp"),
-            )
-            .order_by("-timestamp")
-        )
+        item_source_pairs = []
+        for item in object_list:
+            source_id = getattr(item, "latest_known_minprice_source", None)
+            if source_id is not None:
+                item_source_pairs.append((item.pk, source_id))
 
-        # A bit over-engineered but avoids quadratic/worse costs in case we end up with a lot of item IDs
-        item_ids = set([r['item'] for r in sr])  # O(n)
-        forjson = {i: {'id': i, 'price_history': []} for i in item_ids}  # O(n), accessible in O(lg n) by re-using key i
-        srlist = [{**r, 'id': r['item']} for r in sr]  # O(n) data copy, using new key 'id' for clarity
+        forjson = {
+            item.pk: {"id": item.pk, "price_history": []} for item in object_list
+        }
 
-        while True:  # O(n lg n)
-            try:
-                item = srlist.pop()
-            except IndexError:
-                break
-            timestamp = item['timestamp']
-            if timestamp:
-                local_ts = timezone.localtime(timestamp)
-                date_str = local_ts.strftime("%d/%m/%y")
-            else:
-                date_str = ""
-            forjson[item['id']]['price_history'].append({
-                'price': item['lowest_price'],
-                'date': date_str,
-            })
+        if item_source_pairs:
+            pair_filter = Q()
+            for item_id, source_id in item_source_pairs:
+                pair_filter |= Q(item_id=item_id, source_id=source_id)
 
-        context['items_json'] = json.dumps(list(forjson.values()))
+            stored_by_item_source_update = defaultdict(dict)
+            for result in (
+                SearchResult.objects.filter(instock=1, price__isnull=False)
+                .filter(pair_filter)
+                .select_related("update")
+            ):
+                bucket = stored_by_item_source_update[
+                    (result.item_id, result.source_id)
+                ]
+                existing = bucket.get(result.update_id)
+                if existing is None or result.price < existing["price"]:
+                    bucket[result.update_id] = {
+                        "price": result.price,
+                        "timestamp": result.update.timestamp,
+                        "kind": "stored",
+                    }
+
+            jobs_by_item_source = defaultdict(list)
+            for job in (
+                FetchJob.objects.filter(pair_filter)
+                .select_related("webupdate")
+                .order_by("webupdate__timestamp", "id")
+            ):
+                jobs_by_item_source[(job.item_id, job.source_id)].append(job)
+
+            for item_id, source_id in item_source_pairs:
+                points = _source_price_points(
+                    stored_by_item_source_update.get((item_id, source_id), {}),
+                    jobs_by_item_source.get((item_id, source_id), []),
+                )
+                for point in points:
+                    ts = point["timestamp"]
+                    if ts:
+                        date_str = timezone.localtime(ts).strftime("%d/%m/%y")
+                    else:
+                        date_str = ""
+                    forjson[item_id]["price_history"].append(
+                        {
+                            "price": point["price"],
+                            "date": date_str,
+                        }
+                    )
+
+        context["items_json"] = json.dumps(list(forjson.values()))
         context["tags"] = Tag.objects.all()
         active_tag_id = self.request.GET.get("tag", "")
         context["active_tag_id"] = active_tag_id
@@ -356,16 +397,9 @@ class SearchableListView(ListView):
         if tag_id:
             queryset = queryset.filter(tags__id=tag_id).distinct()
 
-        latest_storing_update = Subquery(
-            SearchResult.objects.filter(item=OuterRef("pk"), instock=1)
-            .order_by("-update__timestamp")
-            .values("update_id")[:1]
-        )
-        cheapest = SearchResult.objects.filter(
-            item=OuterRef("pk"),
-            update_id=latest_storing_update,
-            instock=1,
-        ).order_by("price")
+        # Two-step annotate so OuterRef("pk") in the cheapest filter correlates to
+        # SearchableItem, not an intermediate SearchResult alias (nested Subquery
+        # bug: update_id=Subquery(OuterRef("pk")) resolved to V0.id).
         last_checked = Subquery(
             FetchJob.objects.filter(
                 item=OuterRef("pk"),
@@ -374,10 +408,22 @@ class SearchableListView(ListView):
             .order_by("-webupdate__timestamp")
             .values("webupdate__timestamp")[:1]
         )
-
+        queryset = queryset.annotate(
+            _latest_storing_update_id=Subquery(
+                SearchResult.objects.filter(item=OuterRef("pk"), instock=1)
+                .order_by("-update__timestamp")
+                .values("update_id")[:1]
+            ),
+        )
+        cheapest = SearchResult.objects.filter(
+            item=OuterRef("pk"),
+            update_id=OuterRef("_latest_storing_update_id"),
+            instock=1,
+        ).order_by("price")
         return queryset.annotate(
             latest_known_minprice=Subquery(cheapest.values("price")[:1]),
             latest_known_minprice_title=Subquery(cheapest.values("title")[:1]),
+            latest_known_minprice_source=Subquery(cheapest.values("source_id")[:1]),
             last_checked_at=last_checked,
         )
 

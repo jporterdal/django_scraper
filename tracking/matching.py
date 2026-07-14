@@ -17,3 +17,12 @@ def result_matches_item_source(result_title, item_source) -> bool:
         item_source.title_include_patterns or [],
         item_source.title_exclude_patterns or [],
     )
+
+
+def filter_results_for_item_source(results, item_source) -> list:
+    """Return parser result dicts whose titles pass the ItemSource patterns."""
+    return [
+        result
+        for result in results
+        if result_matches_item_source(result["title"], item_source)
+    ]

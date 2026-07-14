@@ -194,8 +194,15 @@ LOGGING = {
     },
     "handlers": {
         "console": {
+            "level": "INFO",
             "class": "logging.StreamHandler",
             "formatter": "verbose",
+        },
+        'file': {
+            'level': 'DEBUG',
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'django.log'),
+            'formatter': 'verbose',
         },
     },
     "loggers": {
@@ -206,3 +213,7 @@ LOGGING = {
         },
     },
 }
+
+if DEBUG:
+    LOGGING["loggers"]["tracking"]["handlers"].append("file")
+    LOGGING["loggers"]["tracking"]["level"] = "DEBUG"

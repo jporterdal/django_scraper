@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from . import parsers
 from .fetcher import Fetcher, ResponseTooLargeError
+from .matching import filter_results_for_item_source
 from .models import FetchJob, ItemSource, SearchResult, WebUpdate
 
 logger = logging.getLogger(__name__)
@@ -379,9 +380,9 @@ def run_web_update(items=None, fetcher=None, webupdate=None):
                     fetch_job_count += 1
                     error_count += 1
                     continue
-
+                
                 headers = source.build_request_headers(search_term)
-
+                
                 try:
                     outcome = _run_parser_search(
                         parser,
@@ -492,6 +493,11 @@ def run_web_update(items=None, fetcher=None, webupdate=None):
                     fetch_job_count += 1
                     continue
 
+                logger.debug(f"Filtering {len(parser.results)} results for {source.key} {search_term}")
+
+                matching_results = filter_results_for_item_source(
+                    parser.results, item_source
+                )
                 fetch_job = _record_fetch_job(
                     webupdate,
                     item,
@@ -501,11 +507,11 @@ def run_web_update(items=None, fetcher=None, webupdate=None):
                     FetchJob.Status.SUCCESS,
                     http_status=outcome.http_status,
                     duration_ms=duration_ms,
-                    result_count=len(parser.results),
+                    result_count=len(matching_results),
                 )
                 fetch_job_count += 1
 
-                for result in parser.results:
+                for result in matching_results:
                     kws.append({
                         "title": result["title"],
                         "price": result["price"] if result["instock"] else None,

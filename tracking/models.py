@@ -300,7 +300,8 @@ class FetchJob(models.Model):
     http_status = models.PositiveSmallIntegerField(null=True, blank=True)
     error_message = models.TextField(blank=True, default="")
     duration_ms = models.PositiveIntegerField(default=0)
-    # Parsed count from the parser (pre-dedup). Compare stored_count for rows inserted.
+    # Pattern-matching parsed titles after include/exclude filtering, before dedup.
+    # Not raw len(parser.results). Compare stored_count for rows actually inserted.
     result_count = models.PositiveSmallIntegerField(default=0)
     stored_count = models.PositiveSmallIntegerField(
         default=0,
