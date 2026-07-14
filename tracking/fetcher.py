@@ -37,8 +37,8 @@ class Fetcher:
 
     def __init__(
         self,
-        delay_seconds=3.0,
-        jitter_seconds=1.0,
+        delay_seconds=1.0,
+        jitter_seconds=0.42,
         timeout=30,
         user_agent=DEFAULT_USER_AGENT,
         max_response_bytes=None,

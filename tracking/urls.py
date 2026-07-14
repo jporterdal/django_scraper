@@ -5,10 +5,10 @@ from . import views
 urlpatterns = [
     path("", views.index, name="tracking_index"),
     path("add_term/", views.SearchableCreateView.as_view(), name="add_term"),
+    path("bulk_add/", views.BulkAddItemsView.as_view(), name="bulk_add"),
     path("edit_term/<int:pk>/", views.SearchableUpdateView.as_view(), name="edit_term"),
     path("view_terms/", views.SearchableListView.as_view(), name="view_terms"),
     path("item/<int:pk>/", views.SearchableItemDetailView.as_view(), name="item_detail"),
-    # Phase 3 Step 6 — per-item price-history export.
     path("item/<int:pk>/export.csv", views.export_item_csv, name="export_item_csv"),
     path("item/<int:pk>/export.json", views.export_item_json, name="export_item_json"),
     path("tags/", views.TagListView.as_view(), name="view_tags"),
@@ -23,14 +23,14 @@ urlpatterns = [
     path("item/<int:pk>/sources/add/", views.ItemSourceCreateView.as_view(), name="add_item_source"),
     path("item_source/<int:pk>/edit/", views.ItemSourceUpdateView.as_view(), name="edit_item_source"),
     path("item_source/<int:pk>/delete/", views.ItemSourceDeleteView.as_view(), name="delete_item_source"),
-    # Scrape-run history (unchanged name). Schedules live under /schedules/.
+    # Scrape-run history. Schedules live under /schedules/.
     path("view_updates/", views.WebUpdateListView.as_view(), name="view_updates"),
     path(
         "view_updates/<int:pk>/jobs/",
         views.WebUpdateFetchJobsPartialView.as_view(),
         name="webupdate_fetch_jobs",
     ),
-    # Recurring schedules (Phase 3 Step 4). ``add_update`` is kept as an alias
+    # Recurring schedules. ``add_update`` is kept as an alias
     # for the schedule create view so existing links keep resolving.
     path("add_update/", views.UpdateScheduleCreateView.as_view(), name="add_update"),
     path("schedules/", views.UpdateScheduleListView.as_view(), name="view_schedules"),

@@ -6,8 +6,19 @@ from django.urls import reverse
 from django.db.models import Count, OuterRef, Q, Subquery
 from django.shortcuts import redirect, render
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.shortcuts import get_object_or_404
-from .forms import ItemSourceForm, SearchableItemCreateForm, SearchableItemForm, SourceForm, UpdateScheduleForm
+from urllib.parse import urlparse
+from .forms import (
+    BulkAddItemsForm,
+    ItemSourceForm,
+    ItemSourceFormSet,
+    SearchableItemCreateForm,
+    SearchableItemForm,
+    SourceForm,
+    UpdateScheduleForm,
+    create_items_from_bulk_add,
+)
 from .matching import result_matches_item_source
 from .models import (
     FetchJob,
@@ -26,6 +37,21 @@ import json
 from collections import defaultdict
 from datetime import timedelta
 from django.conf import settings
+
+
+def _safe_next_url(request, candidate=None):
+    """Return a safe same-origin/relative redirect target, or None."""
+    if candidate is None:
+        candidate = request.POST.get("next") or request.GET.get("next")
+    if not candidate:
+        return None
+    if url_has_allowed_host_and_scheme(
+        url=candidate,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return candidate
+    return None
 
 
 
@@ -288,6 +314,49 @@ class SearchableCreateView(CreateView):
         return context
 
 
+class BulkAddItemsView(View):
+    """Create many SearchableItems (and optional ItemSources) in one submit."""
+
+    template_name = "tracking/bulk_add_form.html"
+
+    def get(self, request):
+        initial = {}
+        tag_pk = request.GET.get("tag")
+        if tag_pk and Tag.objects.filter(pk=tag_pk).exists():
+            initial["tag"] = str(tag_pk)
+        return self._render(request, BulkAddItemsForm(initial=initial), ItemSourceFormSet())
+
+    def post(self, request):
+        form = BulkAddItemsForm(request.POST)
+        formset = ItemSourceFormSet(request.POST)
+        if form.is_valid() and formset.is_valid():
+            items = create_items_from_bulk_add(
+                terms=form.cleaned_data["search_terms"],
+                tag=form.cleaned_data["tag"],
+                priority=form.cleaned_data["priority"],
+                source_forms=formset.forms,
+            )
+            count = len(items)
+            messages.success(
+                request,
+                f"Added {count} item{'s' if count != 1 else ''}.",
+            )
+            return redirect("view_terms")
+        return self._render(request, form, formset)
+
+    def _render(self, request, form, formset):
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": form,
+                "formset": formset,
+                "form_title": "Bulk Add Items",
+                "submit_label": "Create Items",
+            },
+        )
+
+
 class SearchableUpdateView(UpdateView):
     model = SearchableItem
     form_class = SearchableItemForm
@@ -490,12 +559,26 @@ class TagCreateView(CreateView):
 
     def get_success_url(self):
         messages.success(self.request, f"Tag “{self.object.name}” created.")
+        next_url = _safe_next_url(self.request)
+        if next_url:
+            bulk_path = reverse("bulk_add")
+            if urlparse(next_url).path.rstrip("/") == bulk_path.rstrip("/"):
+                return f"{bulk_path}?tag={self.object.pk}"
+            return next_url
         return reverse("view_tags")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["form_title"] = "Add Tag"
         context["submit_label"] = "Add Tag"
+        next_param = self.request.POST.get("next") or self.request.GET.get("next")
+        safe_next = _safe_next_url(self.request, next_param)
+        context["next_param"] = next_param if safe_next else ""
+        context["back_url"] = safe_next or reverse("view_tags")
+        context["back_label"] = "Back to Bulk Add" if (
+            safe_next
+            and urlparse(safe_next).path.rstrip("/") == reverse("bulk_add").rstrip("/")
+        ) else "Back to Tags"
         return context
 
     def get_form(self, form_class=None):
@@ -521,6 +604,8 @@ class TagUpdateView(UpdateView):
         context = super().get_context_data(**kwargs)
         context["form_title"] = "Edit Tag"
         context["submit_label"] = "Save Changes"
+        context["back_url"] = reverse("view_tags")
+        context["back_label"] = "Back to Tags"
         return context
 
     def get_form(self, form_class=None):

@@ -1,9 +1,17 @@
 import re
 
 from django import forms
+from django.db import transaction
+from django.db.models.functions import Lower
+from django.forms import BaseFormSet, formset_factory
 
-from .models import ItemSource, SearchableItem, Source, UpdateSchedule
+from .models import ItemSource, SearchableItem, Source, Tag, UpdateSchedule
 from .parsers import sources as parser_registry
+
+# Sentinel for BulkAddItemsForm "No tag" choice (distinct from unchosen "").
+BULK_ADD_TAG_NONE = "__none__"
+BULK_ADD_MAX_TERMS = 200
+BULK_ADD_TERM_MAX_LENGTH = 125
 
 
 BASE_SEARCH_URL_HELP_TEXT = (
@@ -280,3 +288,173 @@ class UpdateScheduleForm(forms.ModelForm):
         # optional tag scope.
         self.fields["tag"].empty_label = "All active items"
         _apply_bootstrap_form_classes(self)
+
+
+class BulkAddItemsForm(forms.Form):
+    """Form for creating many SearchableItems from a multiline term list."""
+
+    tag = forms.ChoiceField(
+        choices=[],  # populated in __init__
+        required=True,
+        label="Tag",
+    )
+    search_terms = forms.CharField(
+        widget=forms.Textarea(
+            attrs={
+                "rows": 12,
+                "title": f"Maximum {BULK_ADD_MAX_TERMS} search terms per submission",
+            }
+        ),
+        help_text=(
+            f"One search term per line. Maximum {BULK_ADD_MAX_TERMS} terms."
+        ),
+        label="Search terms",
+    )
+    priority = forms.TypedChoiceField(
+        choices=SearchableItem.Priority.choices,
+        coerce=int,
+        initial=SearchableItem.Priority.B,
+        label="Priority",
+    )
+    allow_duplicate_text = forms.BooleanField(
+        required=False,
+        initial=False,
+        label="Add terms even if entries exist with identical text (leave unchecked to verify no duplication of text)",
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        tag_choices = [
+            ("", "--- Choice Required ---"),
+            (BULK_ADD_TAG_NONE, "No tag"),
+        ]
+        tag_choices.extend(
+            (str(pk), name)
+            for pk, name in Tag.objects.order_by("name").values_list("pk", "name")
+        )
+        self.fields["tag"].choices = tag_choices
+        _apply_bootstrap_form_classes(self)
+
+    def clean_tag(self):
+        value = self.cleaned_data["tag"]
+        if value == BULK_ADD_TAG_NONE:
+            return None
+        try:
+            return Tag.objects.get(pk=value)
+        except (Tag.DoesNotExist, ValueError, TypeError):
+            raise forms.ValidationError("Select a valid tag or No tag.")
+
+    def clean_search_terms(self):
+        raw = self.cleaned_data.get("search_terms") or ""
+        terms = [line.strip() for line in raw.splitlines() if line.strip()]
+        if not terms:
+            raise forms.ValidationError("Enter at least one search term.")
+        if len(terms) > BULK_ADD_MAX_TERMS:
+            raise forms.ValidationError(
+                f"At most {BULK_ADD_MAX_TERMS} search terms are allowed."
+            )
+        for term in terms:
+            if len(term) > BULK_ADD_TERM_MAX_LENGTH:
+                raise forms.ValidationError(
+                    f"Each term must be at most {BULK_ADD_TERM_MAX_LENGTH} "
+                    f"characters (too long: {term[:40]!r}…)."
+                )
+        seen_lower = set()
+        for term in terms:
+            key = term.casefold()
+            if key in seen_lower:
+                raise forms.ValidationError(
+                    f"Duplicate term in the list (case-insensitive): {term!r}."
+                )
+            seen_lower.add(key)
+        return terms
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned is None:
+            return cleaned
+
+        terms = cleaned.get("search_terms")
+        allow_duplicate_text = cleaned.get("allow_duplicate_text")
+        if terms and not allow_duplicate_text:
+            term_by_lower = {}
+            for term in terms:
+                term_by_lower.setdefault(term.lower(), term)
+            existing_lowers = set(
+                SearchableItem.objects.annotate(text_lower=Lower("text"))
+                .filter(text_lower__in=list(term_by_lower.keys()))
+                .values_list("text_lower", flat=True)
+            )
+            collisions = [
+                term_by_lower[low]
+                for low in term_by_lower
+                if low in existing_lowers
+            ]
+            if collisions:
+                listed = ", ".join(repr(t) for t in collisions)
+                raise forms.ValidationError(
+                    f"The following terms already exist: {listed}."
+                )
+        return cleaned
+
+
+class BaseItemSourceFormSet(BaseFormSet):
+    """Formset of ItemSourceForm rows; sources must be unique among filled rows."""
+
+    def clean(self):
+        if any(self.errors):
+            return
+        seen = set()
+        for form in self.forms:
+            if self.can_delete and self._should_delete_form(form):
+                continue
+            if not form.cleaned_data:
+                continue
+            source = form.cleaned_data.get("source")
+            if not source:
+                continue
+            source_id = source.pk
+            if source_id in seen:
+                raise forms.ValidationError(
+                    "Each source may only be selected once."
+                )
+            seen.add(source_id)
+
+
+ItemSourceFormSet = formset_factory(
+    ItemSourceForm,
+    formset=BaseItemSourceFormSet,
+    extra=1,
+    can_delete=True,
+)
+
+
+def create_items_from_bulk_add(terms, tag, priority, source_forms):
+    """Atomically create SearchableItems (and optional ItemSources) from bulk add.
+
+    ``source_forms`` should be validated ``ItemSourceForm`` instances. Empty or
+    deleted rows are skipped. Returns the list of created ``SearchableItem``s.
+    """
+    created = []
+    with transaction.atomic():
+        for term in terms:
+            item = SearchableItem.objects.create(text=term, priority=priority)
+            if tag is not None:
+                item.tags.add(tag)
+            for form in source_forms:
+                data = getattr(form, "cleaned_data", None) or {}
+                if data.get("DELETE"):
+                    continue
+                source = data.get("source")
+                if not source:
+                    continue
+                ItemSource.objects.create(
+                    item=item,
+                    source=source,
+                    url_suffix=data.get("url_suffix") or "",
+                    pinned_url=data.get("pinned_url") or "",
+                    title_include_patterns=data.get("title_include_patterns") or [],
+                    title_exclude_patterns=data.get("title_exclude_patterns") or [],
+                )
+            created.append(item)
+    return created

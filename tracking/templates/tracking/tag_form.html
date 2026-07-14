@@ -6,13 +6,16 @@
     <h1 class="text-center mb-4">{{ form_title }}</h1>
 
     <p class="text-center mb-4">
-        <a href="{% url 'view_tags' %}">Back to Tags</a>
+        <a href="{{ back_url }}">{{ back_label }}</a>
     </p>
 
     <div class="card mx-auto" style="max-width: 32rem;">
         <div class="card-body">
             <form method="post">
                 {% csrf_token %}
+                {% if next_param %}
+                    <input type="hidden" name="next" value="{{ next_param }}">
+                {% endif %}
                 {% if form.non_field_errors %}
                     <div class="alert alert-danger">{{ form.non_field_errors }}</div>
                 {% endif %}

@@ -1,0 +1,192 @@
+{% extends "tracking/base.html" %}
+
+{% block title %}{{ form_title }}{% endblock %}
+
+{% block content %}
+    {% url 'bulk_add' as bulk_add_next %}
+    <h1 class="text-center mb-4">{{ form_title }}</h1>
+
+    <p class="text-center mb-4">
+        <a href="{% url 'view_terms' %}">Back to Items</a>
+    </p>
+
+    <div class="card mx-auto" style="max-width: 48rem;">
+        <div class="card-body">
+            <p class="strong mb-4">
+                Enter multiple search terms below. Separate entries will be created each using the same parameters below to initialize.
+            </p>
+            <form method="post" id="bulk-add-form">
+                {% csrf_token %}
+
+                {% if form.non_field_errors %}
+                    <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+                {% endif %}
+                {% if formset.non_form_errors %}
+                    <div class="alert alert-danger">{{ formset.non_form_errors }}</div>
+                {% endif %}
+
+                <div class="mb-3">
+                    <label for="{{ form.tag.id_for_label }}" class="form-label">{{ form.tag.label }}</label>
+                    <div class="d-flex flex-wrap gap-2 align-items-start">
+                        <div class="flex-grow-1">
+                            {{ form.tag }}
+                        </div>
+                        <a href="{% url 'add_tag' %}?next={{ bulk_add_next|urlencode }}"
+                           class="btn btn-outline-primary">Add a new tag</a>
+                        <p class="text-muted small">
+                            All new items will be assigned to the selected tag, or tagless if "No tag" selected.
+                        </p>
+                    </div>
+                    {% if form.tag.help_text %}
+                        <div class="form-text">{{ form.tag.help_text }}</div>
+                    {% endif %}
+                    {% if form.tag.errors %}
+                        <div class="text-danger small">{{ form.tag.errors }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="mb-3">
+                    <label for="{{ form.search_terms.id_for_label }}" class="form-label">{{ form.search_terms.label }}</label>
+                    {{ form.search_terms }}
+                    {% if form.search_terms.help_text %}
+                        <div class="form-text">{{ form.search_terms.help_text }}</div>
+                    {% endif %}
+                    {% if form.search_terms.errors %}
+                        <div class="text-danger small">{{ form.search_terms.errors }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="mb-3">
+                    <label for="{{ form.priority.id_for_label }}" class="form-label">{{ form.priority.label }}</label>
+                    {{ form.priority }}
+                    {% if form.priority.help_text %}
+                        <div class="form-text">{{ form.priority.help_text }}</div>
+                    {% endif %}
+                    {% if form.priority.errors %}
+                        <div class="text-danger small">{{ form.priority.errors }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="mb-3 form-check">
+                    {{ form.allow_duplicate_text }}
+                    <label for="{{ form.allow_duplicate_text.id_for_label }}" class="form-check-label">
+                        {{ form.allow_duplicate_text.label }}
+                    </label>
+                    {% if form.allow_duplicate_text.help_text %}
+                        <div class="form-text">{{ form.allow_duplicate_text.help_text }}</div>
+                    {% endif %}
+                    {% if form.allow_duplicate_text.errors %}
+                        <div class="text-danger small">{{ form.allow_duplicate_text.errors }}</div>
+                    {% endif %}
+                </div>
+
+                <hr class="my-4">
+                <h2 class="h5 mb-3">Item sources (optional)</h2>
+                <p class="text-muted small">
+                    Each configured source is created for every new item. Leave rows blank for no sources.
+                </p>
+
+                {{ formset.management_form }}
+                <div id="source-forms">
+                    {% for source_form in formset %}
+                        <div class="source-form border rounded p-3 mb-3">
+                            {% if source_form.non_field_errors %}
+                                <div class="alert alert-danger">{{ source_form.non_field_errors }}</div>
+                            {% endif %}
+                            {% for field in source_form %}
+                                {% if field.name == "DELETE" %}
+                                    <div class="form-check mb-0">
+                                        {{ field }}
+                                        <label for="{{ field.id_for_label }}" class="form-check-label">Skip using this source</label>
+                                    </div>
+                                {% else %}
+                                    <div class="mb-3">
+                                        <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
+                                        {{ field }}
+                                        {% if field.help_text %}
+                                            <div class="form-text">{{ field.help_text }}</div>
+                                        {% endif %}
+                                        {% if field.errors %}
+                                            <div class="text-danger small">{{ field.errors }}</div>
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                    {% endfor %}
+                </div>
+
+                <template id="empty-source-form">
+                    <div class="source-form border rounded p-3 mb-3">
+                        {% for field in formset.empty_form %}
+                            {% if field.name == "DELETE" %}
+                                <div class="form-check mb-0">
+                                    {{ field }}
+                                    <label for="{{ field.id_for_label }}" class="form-check-label">Remove this source</label>
+                                </div>
+                            {% else %}
+                                <div class="mb-3">
+                                    <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
+                                    {{ field }}
+                                    {% if field.help_text %}
+                                        <div class="form-text">{{ field.help_text }}</div>
+                                    {% endif %}
+                                </div>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                </template>
+
+                <button type="button" class="btn btn-outline-secondary mb-4" id="add-source-row">
+                    Add another source
+                </button>
+
+                <div>
+                    <button type="submit" class="btn btn-primary">{{ submit_label }}</button>
+                    <a href="{% url 'view_terms' %}" class="btn btn-link">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    const form = document.getElementById("bulk-add-form");
+    const tagSelect = document.getElementById("{{ form.tag.id_for_label }}");
+    const searchTerms = document.getElementById("{{ form.search_terms.id_for_label }}");
+    const totalForms = document.getElementById("id_form-TOTAL_FORMS");
+    const sourceForms = document.getElementById("source-forms");
+    const emptyTemplate = document.getElementById("empty-source-form");
+    const addButton = document.getElementById("add-source-row");
+
+    function updateSearchTermsGate() {
+        if (!tagSelect || !searchTerms) return;
+        // Valid when No tag (__none__) or an existing tag pk is selected; "" is placeholder.
+        searchTerms.disabled = !tagSelect.value;
+    }
+
+    if (tagSelect) {
+        tagSelect.addEventListener("change", updateSearchTermsGate);
+        updateSearchTermsGate();
+    }
+
+    if (form && searchTerms) {
+        form.addEventListener("submit", function () {
+            // Disabled fields are omitted from POST; re-enable so terms are submitted.
+            searchTerms.disabled = false;
+        });
+    }
+
+    if (addButton && totalForms && sourceForms && emptyTemplate) {
+        addButton.addEventListener("click", function () {
+            const index = parseInt(totalForms.value, 10);
+            const html = emptyTemplate.innerHTML.replace(/__prefix__/g, String(index));
+            sourceForms.insertAdjacentHTML("beforeend", html);
+            totalForms.value = index + 1;
+        });
+    }
+})();
+</script>
+{% endblock %}

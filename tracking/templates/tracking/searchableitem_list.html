@@ -30,6 +30,7 @@
                 <h4 class="mb-0">All Items</h4>
                 <div class="d-flex flex-wrap gap-2 align-items-center">
                     <a href="{% url 'add_term' %}" class="btn btn-success btn-sm">Add New Item</a>
+                    <a href="{% url 'bulk_add' %}" class="btn btn-success btn-sm">Bulk Add</a>
                     <a href="{% url 'view_tags' %}" class="btn btn-outline-primary btn-sm">Manage Tags</a>
                     <a href="{% url 'view_sources' %}" class="btn btn-outline-primary btn-sm">Manage Sources</a>
                     <button type="submit" name="mode" value="selected" class="btn btn-warning btn-sm">Update Selected</button>
@@ -114,7 +115,7 @@
                                 <td>{{ item.get_priority_display }}</td>
                                 <td data-order="{{ item.latest_known_minprice|default:-1 }}">
                                     {% if item.latest_known_minprice is not None %}
-                                        <div>${{ item.latest_known_minprice }}</div>
+                                        <div>${{ item.latest_known_minprice|floatformat:"2g" }}</div>
                                         <div class="small text-muted">{{ item.latest_known_minprice_title }}</div>
                                     {% else %}
                                         <div class="text-muted">—</div>
