@@ -31,6 +31,7 @@ from .models import (
     WebUpdate,
 )
 from .parsers import sources as parser_registry
+from .scheduling_status import schedules_may_not_fire
 from .tasks import run_web_update_task
 import csv
 import json
@@ -919,6 +920,11 @@ class UpdateScheduleListView(ListView):
     model = UpdateSchedule
     template_name = "tracking/updateschedule_list.html"
     context_object_name = "schedules"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["show_scheduler_warning"] = schedules_may_not_fire()
+        return context
 
 
 class UpdateScheduleCreateView(CreateView):

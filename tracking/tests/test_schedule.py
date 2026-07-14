@@ -10,6 +10,7 @@ from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from django import forms
+from django.conf import settings
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
@@ -22,8 +23,18 @@ from tracking.models import (
     UpdateSchedule,
     WebUpdate,
 )
+from tracking.scheduling_status import schedules_may_not_fire
 from tracking.tests.base import AuthedClientTestCase
 from tracking.tests.factories import make_item, make_item_source, make_linked_item, make_source
+
+WARNING_COPY = "Scheduled runs may not fire under current server settings."
+
+
+def _huey_with_immediate(immediate):
+    """Copy settings.HUEY and set immediate, preserving other required keys."""
+    huey = dict(settings.HUEY)
+    huey["immediate"] = immediate
+    return huey
 
 HALIFAX = ZoneInfo("America/Halifax")
 
@@ -209,6 +220,42 @@ class DispatcherTests(TestCase):
         self.assertIsNone(mock_run.call_args.kwargs["items"])
 
 
+class SchedulesMayNotFireHelperTests(TestCase):
+    def test_empty_redis_url_may_not_fire(self):
+        with override_settings(REDIS_URL="", HUEY=_huey_with_immediate(False)):
+            self.assertTrue(schedules_may_not_fire())
+
+    def test_whitespace_redis_url_may_not_fire(self):
+        with override_settings(REDIS_URL="  \t  ", HUEY=_huey_with_immediate(False)):
+            self.assertTrue(schedules_may_not_fire())
+
+    def test_missing_redis_url_may_not_fire(self):
+        with override_settings(HUEY=_huey_with_immediate(False)):
+            del settings.REDIS_URL
+            self.assertTrue(schedules_may_not_fire())
+
+    def test_healthy_settings_ok(self):
+        with override_settings(
+            REDIS_URL="redis://example.internal:6379/0",
+            HUEY=_huey_with_immediate(False),
+        ):
+            self.assertFalse(schedules_may_not_fire())
+
+    def test_immediate_true_may_not_fire(self):
+        with override_settings(
+            REDIS_URL="redis://example.internal:6379/0",
+            HUEY=_huey_with_immediate(True),
+        ):
+            self.assertTrue(schedules_may_not_fire())
+
+    def test_malformed_but_set_redis_url_ok_when_not_immediate(self):
+        with override_settings(
+            REDIS_URL="not-a-url",
+            HUEY=_huey_with_immediate(False),
+        ):
+            self.assertFalse(schedules_may_not_fire())
+
+
 class ScheduleCRUDViewTests(AuthedClientTestCase):
     def test_list_view_shows_schedules(self):
         UpdateSchedule.objects.create(name="Nightly", anchor_time=time(9, 0))
@@ -216,6 +263,31 @@ class ScheduleCRUDViewTests(AuthedClientTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Nightly")
         self.assertContains(response, "Daily")
+
+    def test_list_view_shows_warning_under_default_test_settings(self):
+        UpdateSchedule.objects.create(name="Nightly", anchor_time=time(9, 0))
+        response = self.client.get(reverse("view_schedules"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, WARNING_COPY)
+        self.assertNotContains(response, "Huey")
+        self.assertNotContains(response, "Redis")
+        self.assertNotContains(response, "run_huey")
+
+    def test_list_view_shows_warning_with_zero_schedules(self):
+        response = self.client.get(reverse("view_schedules"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No schedules yet.")
+        self.assertContains(response, WARNING_COPY)
+
+    def test_list_view_hides_warning_when_settings_healthy(self):
+        UpdateSchedule.objects.create(name="Nightly", anchor_time=time(9, 0))
+        with override_settings(
+            REDIS_URL="redis://example.internal:6379/0",
+            HUEY=_huey_with_immediate(False),
+        ):
+            response = self.client.get(reverse("view_schedules"))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, WARNING_COPY)
 
     def test_create_view_get_renders_frequency_select(self):
         response = self.client.get(reverse("add_schedule"))

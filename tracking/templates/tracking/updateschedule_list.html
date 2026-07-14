@@ -64,13 +64,11 @@
                     </tbody>
                 </table>
             </div>
-            <p class="text-muted small mb-0">
-                Scheduled runs only fire while the Huey consumer is running
-                (<code>python manage.py run_huey</code>) with Redis available. See
-                <code>docs/scheduling.md</code>.
-            </p>
             {% else %}
-            <p class="text-muted mb-0">No schedules yet. <a href="{% url 'add_schedule' %}">Add one</a> to run scrapes automatically.</p>
+            <p class="text-muted {% if show_scheduler_warning %}mb-3{% else %}mb-0{% endif %}">No schedules yet. <a href="{% url 'add_schedule' %}">Add one</a> to run scrapes automatically.</p>
+            {% endif %}
+            {% if show_scheduler_warning %}
+            <p class="text-muted small mb-0">Scheduled runs may not fire under current server settings.</p>
             {% endif %}
         </div>
     </div>

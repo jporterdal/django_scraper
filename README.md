@@ -46,7 +46,7 @@ Manual “Update All Active” / “Update Selected” runs enqueue a background
 For real queued/scheduled runs in production:
 
 ```bash
-# Requires Redis (settings.REDIS_URL, default redis://localhost:6379/0)
+# Requires Redis (settings.REDIS_URL, e.g. redis://localhost:6379/0; unset/"")
 python manage.py run_huey
 ```
 
@@ -88,7 +88,7 @@ The app is intended to run behind a reverse proxy that terminates TLS. Django se
 | `SECURE_DEPLOYMENT` | `True` — enables SSL redirect, secure cookies, HSTS, and proxy SSL header |
 | `CSRF_TRUSTED_ORIGINS` | `https://tracker.example.com` (comma-separated if multiple) |
 | `DATABASE_URL` | `postgres://user:pass@host:5432/dbname` |
-| `REDIS_URL` | Redis for Huey, e.g. `redis://localhost:6379/0` |
+| `REDIS_URL` | Redis for Huey; unset/`""` means not configured. Example: `redis://localhost:6379/0` |
 | `HUEY_IMMEDIATE` | `False` (default when `DEBUG=False`) so tasks queue to Redis |
 
 Generate a new secret key:

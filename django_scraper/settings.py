@@ -30,7 +30,6 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
 # off so local dev and the test suite are unaffected.
 SECURE_DEPLOYMENT = env.bool("SECURE_DEPLOYMENT", default=False)
 
-
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -167,7 +166,7 @@ SCRAPE_MAX_RESPONSE_BYTES = env.int("SCRAPE_MAX_RESPONSE_BYTES", default=8_000_0
 # Background tasks (Huey + Redis)
 # Redis connection string for the Huey consumer/producer. Only required when
 # actually running the background worker (`python manage.py run_huey`).
-REDIS_URL = env.str("REDIS_URL", default="redis://localhost:6379/0")
+REDIS_URL = env.str("REDIS_URL", default="")
 # ``immediate`` runs tasks synchronously in-process with NO Redis needed, which
 # is what dev and the test suite rely on. It defaults to DEBUG (True in dev/test)
 # so the suite passes without a Redis server; set HUEY_IMMEDIATE=False (with
@@ -201,7 +200,7 @@ LOGGING = {
         'file': {
             'level': 'DEBUG',
             'class': 'logging.FileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs', 'django.log'),
+            'filename': os.path.join(BASE_DIR, 'django_debug.log'),
             'formatter': 'verbose',
         },
     },
