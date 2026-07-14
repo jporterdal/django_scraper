@@ -489,7 +489,7 @@ class SearchableListView(ListView):
             item=OuterRef("pk"),
             update_id=OuterRef("_latest_storing_update_id"),
             instock=1,
-        ).order_by("price")
+        ).order_by("price", "source_id")
         return queryset.annotate(
             latest_known_minprice=Subquery(cheapest.values("price")[:1]),
             latest_known_minprice_title=Subquery(cheapest.values("title")[:1]),

@@ -115,7 +115,9 @@
                                 <td>{{ item.get_priority_display }}</td>
                                 <td data-order="{{ item.latest_known_minprice|default:-1 }}">
                                     {% if item.latest_known_minprice is not None %}
-                                        <div>${{ item.latest_known_minprice|floatformat:"2g" }}</div>
+                                        <div>
+                                            ${{ item.latest_known_minprice|floatformat:"2g" }}{% if item.latest_known_minprice_source %} [{{ item.latest_known_minprice_source }}]{% endif %}
+                                        </div>
                                         <div class="small text-muted">{{ item.latest_known_minprice_title }}</div>
                                     {% else %}
                                         <div class="text-muted">—</div>
