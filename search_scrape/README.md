@@ -1,0 +1,12 @@
+# Overview for search-scrape
+This is a simple script for gently scraping commercial search-page results. The intended use-case is for checking a website's search results on particular items to extract price data which can then be compiled over time.
+
+## Usage
+Pre-requisites for `pip` are given in [requirements.txt](requirements.txt). A straightforward usage example is given in [example.py](example.py).  
+
+### Basic Walkthrough
+The class `SearchParser` extends `html.parser.HTMLParser` to create a rudimentary DOM of a given HTML page and allow processing those elements to look for search results using a search term that is given on object initialization. All search results are collected and their title and price are recorded internally. Once the HTML is parsed, functions like `lowest_price()` will match against the results' titles and determine which qualify as the desired item and compare the prices accordingly. Subclasses are responsible for setting regexp patterns beyond `<search_term>$` to be used when matching against the titles.  
+
+By default, search results will be collated using price, title, category, and an "in stock" flag as data. Other features may be added through subclasses by modifying the list of data keys. Whenever a new HTML element is encountered, a check method will be called for each data key using the naming scheme `check_element_keyname` where *keyname* is the name of the data key. This should be implemented in subclasses and will return True/False indicating whether the current element will contain the data associated with its corresponding key. For example, `check_element_price()` should be implemented to return True only when passed an element that will contain price data. When data is read by the parser, if a recent call to `check_element_keyname` returned True then the data will be passed to a corresponding `read_keyname` method. This should also be implemented in subclasses and will parse the given HTML data however is necessary to determine the appropriate value.
+
+Once all data values for a single item have been read, they are appended to an internal list of results. This list is used after the HTML is fully parsed to determine things like the lowest price among in stock items.
