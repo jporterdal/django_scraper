@@ -30,6 +30,17 @@ class Source(models.Model):
         verbose_name="Parser registry key selecting which parser handles this source (e.g. 'shopify', 'storepass')",
     )
 
+    rate_limit_profile = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name=(
+            "Rate-limit profile registry key selecting how this source's budget "
+            "is extracted and paced (e.g. 'ietf', 'x-ratelimit', 'graphql_cost'); "
+            "blank/'none' keeps the fixed-delay pacing all sources use today"
+        ),
+    )
+
     base_search_url = models.CharField(
         max_length=1000,
         blank=False,
@@ -286,6 +297,7 @@ class FetchJob(models.Model):
         EMPTY = "empty", "No results"
         OVERSIZED = "oversized", "Response too large"
         BLOCKED = "blocked", "Blocked"
+        GIVE_UP = "give_up", "Gave up"
 
     webupdate = models.ForeignKey(
         WebUpdate,
@@ -315,6 +327,12 @@ class FetchJob(models.Model):
     class Meta:
         indexes = [
             models.Index(fields=["webupdate", "status"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["webupdate", "item", "source"],
+                name="unique_fetchjob_per_webupdate_item_source",
+            ),
         ]
         ordering = ["id"]
 
@@ -384,8 +402,9 @@ class SearchResult(models.Model):
 class UpdateSchedule(models.Model):
     """A recurring background scrape defined by a preset cadence.
 
-    A schedule fires ``run_web_update_task`` on a recurring cadence chosen from a
-    small set of presets (see ``Frequency``) rather than a single fixed daily run.
+    A schedule fires ``tracking.tasks.dispatch_fan_out`` on a recurring cadence
+    chosen from a small set of presets (see ``Frequency``) rather than a single
+    fixed daily run.
     The Huey periodic dispatcher (``tracking/tasks.py::dispatch_scheduled_updates``)
     wakes every minute, finds due schedules, enqueues a run for each, and stamps
     ``last_run_at``.

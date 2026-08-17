@@ -7,6 +7,7 @@ from django.forms import BaseFormSet, formset_factory
 
 from .models import ItemSource, SearchableItem, Source, Tag, UpdateSchedule
 from .parsers import sources as parser_registry
+from .ratelimit import PROFILE_CHOICES as rate_limit_profile_choices
 
 # Sentinel for BulkAddItemsForm "No tag" choice (distinct from unchosen "").
 BULK_ADD_TAG_NONE = "__none__"
@@ -194,12 +195,23 @@ class SourceForm(forms.ModelForm):
         help_text="Which registered parser handles responses from this source.",
     )
 
+    rate_limit_profile = forms.ChoiceField(
+        choices=rate_limit_profile_choices,
+        required=False,
+        label="Rate-limit profile",
+        help_text=(
+            "How this source's rate-limit budget is extracted and paced. "
+            "Leave as 'None' for fixed-delay pacing (the default for HTML sources)."
+        ),
+    )
+
     class Meta:
         model = Source
         fields = [
             "key",
             "name",
             "parser_key",
+            "rate_limit_profile",
             "http_method",
             "base_search_url",
             "request_body_template",

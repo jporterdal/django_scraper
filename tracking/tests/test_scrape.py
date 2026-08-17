@@ -86,7 +86,10 @@ class ScrapeOrchestratorTests(LinkedSourceTestCase):
             stats = run_web_update(fetcher=self.fetcher)
 
         self.assertEqual(stats.search_count, 2)
-        self.fetcher.wait.assert_called_once()
+        # Fan-out (D8): fixed-delay pacing now happens per unit, inside
+        # fetch_one_unit, rather than "skip the first item in a shared loop" —
+        # so a synchronous run of 2 item-sources calls wait() twice, not once.
+        self.assertEqual(self.fetcher.wait.call_count, 2)
 
 class ScrapeUrlIntegrationTests(LinkedSourceTestCase):
     @classmethod
@@ -122,6 +125,7 @@ class ScrapeUrlIntegrationTests(LinkedSourceTestCase):
             max_pages=1,
             method="GET",
             body=None,
+            pacing=None,
         )
 
 class SearchTermAndSummaryQueryTests(LinkedSourceTestCase):

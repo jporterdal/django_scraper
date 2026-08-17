@@ -41,7 +41,7 @@ coverage report -m
 
 ## Background updates
 
-Manual “Update All Active” / “Update Selected” runs enqueue a background scrape (`run_web_update_task`). In development and during tests, Huey runs tasks **immediately** in-process (`HUEY["immediate"] = True` when `DEBUG` is on) — no separate worker is required.
+Manual “Update All Active” / “Update Selected” runs fan out one background task per item-source (`dispatch_fan_out`/`fetch_one`) rather than one task per run, so a single rate-limited or slow source doesn't hold up the others. In development and during tests, Huey runs tasks **immediately** in-process (`HUEY["immediate"] = True` when `DEBUG` is on) — no separate worker is required.
 
 For real queued/scheduled runs in production:
 
@@ -77,6 +77,7 @@ The app is intended to run behind a reverse proxy that terminates TLS. Django se
 2. **WSGI server** — run gunicorn or uvicorn against `django_scraper.wsgi:application`, e.g. `gunicorn django_scraper.wsgi:application --bind 127.0.0.1:8000`.
 3. **Huey worker** — a separate process running `python manage.py run_huey` with Redis (`REDIS_URL`). The web process alone does not dispatch scheduled scrapes. See `docs/scheduling.md` for schedule behaviour.
 4. **PostgreSQL** — set `DATABASE_URL` to a Postgres connection string. See `docs/postgres_migration.md` for migration from SQLite.
+5. **Rate-limit awareness** (optional) — API-profiled `Source` rows (`rate_limit_profile`) pace themselves against vendor quota; the same Redis as the Huey worker (`REDIS_URL`) is required for that pacing (and its idempotency locks) to be shared correctly across more than one worker. See `docs/rate_limiting.md`.
 
 ### Required production `.env`
 

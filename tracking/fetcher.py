@@ -50,16 +50,28 @@ class Fetcher:
         self.max_response_bytes = max_response_bytes
         self._session = requests.Session()
         self._session.headers["User-Agent"] = user_agent
+        self._session = self._mount_retries(self._session, status_forcelist=[429, 503])
 
+        # Rate-limit-profiled sources must not have urllib3 silently retry a
+        # 429 — the pacer needs to see it and apply Retry-After / Defer
+        # instead (D6). 503 stays a transparent backstop for both.
+        self._api_session = requests.Session()
+        self._api_session.headers["User-Agent"] = user_agent
+        self._api_session = self._mount_retries(
+            self._api_session, status_forcelist=[503]
+        )
+
+    def _mount_retries(self, session, status_forcelist):
         retry = Retry(
             total=3,
             backoff_factor=1,
-            status_forcelist=[429, 503],
+            status_forcelist=status_forcelist,
             allowed_methods=["GET", "POST"],
         )
         adapter = HTTPAdapter(max_retries=retry)
-        self._session.mount("https://", adapter)
-        self._session.mount("http://", adapter)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+        return session
 
     @classmethod
     def from_settings(cls):
@@ -78,13 +90,18 @@ class Fetcher:
         logger.debug("Rate limit pause %.2fs before next request", pause)
         time.sleep(pause)
 
-    def request(self, method, url, json=None, headers=None):
+    def request(self, method, url, json=None, headers=None, profiled=False):
+        """Send a request. ``profiled=True`` selects the API-profile retry
+        policy (503-only backstop, no transparent 429 retry — see D6) instead
+        of the default HTML/none policy (429+503).
+        """
         method_upper = method.upper()
+        session = self._api_session if profiled else self._session
         logger.info("%s %s", method_upper, url)
         if method_upper == "GET":
-            response = self._session.get(url, timeout=self.timeout, headers=headers)
+            response = session.get(url, timeout=self.timeout, headers=headers)
         elif method_upper == "POST":
-            response = self._session.post(
+            response = session.post(
                 url, json=json, timeout=self.timeout, headers=headers
             )
         else:
@@ -103,11 +120,11 @@ class Fetcher:
         self._enforce_size_cap(response, url)
         return response
 
-    def get(self, url, headers=None):
-        return self.request("GET", url, headers=headers)
+    def get(self, url, headers=None, profiled=False):
+        return self.request("GET", url, headers=headers, profiled=profiled)
 
-    def post(self, url, json=None, headers=None):
-        return self.request("POST", url, json=json, headers=headers)
+    def post(self, url, json=None, headers=None, profiled=False):
+        return self.request("POST", url, json=json, headers=headers, profiled=profiled)
 
     def _enforce_size_cap(self, response, url):
         """Reject responses larger than ``max_response_bytes``.

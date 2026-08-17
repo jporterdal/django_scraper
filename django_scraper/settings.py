@@ -163,6 +163,38 @@ SCRAPE_REQUEST_TIMEOUT_SECONDS = env.int("SCRAPE_REQUEST_TIMEOUT_SECONDS", defau
 # Set to 0 (or leave unset with default) to disable the cap; 0/None = unlimited.
 SCRAPE_MAX_RESPONSE_BYTES = env.int("SCRAPE_MAX_RESPONSE_BYTES", default=8_000_000)
 
+# Rate-limit awareness (API-profiled JSON/GraphQL sources; see
+# tracking/ratelimit/. Sources on the default profile ignore all of this and
+# keep the fixed SCRAPE_REQUEST_DELAY_SECONDS pacing above.)
+# Fraction of vendor-reported remaining budget treated as unusable headroom.
+RATE_LIMIT_HEADROOM_PCT = env.float("RATE_LIMIT_HEADROOM_PCT", default=0.50)
+# Floor on time between requests to the same rate-limit scope. Defaults to the
+# same fixed delay HTML sources use, so profiled sources are never paced more
+# aggressively than everything else.
+RATE_LIMIT_MIN_INTERVAL_SECONDS = env.float(
+    "RATE_LIMIT_MIN_INTERVAL_SECONDS", default=SCRAPE_REQUEST_DELAY_SECONDS
+)
+# Smooth usable budget across the time remaining until reset, in addition to
+# the min interval floor.
+RATE_LIMIT_FAIR_INTERVAL = env.bool("RATE_LIMIT_FAIR_INTERVAL", default=True)
+# Below this, a unit task sleeps in-worker and re-checks; at/above it, the
+# unit defers (requeues) instead of holding a worker.
+RATE_LIMIT_SHORT_WAIT_THRESHOLD_SECONDS = env.float(
+    "RATE_LIMIT_SHORT_WAIT_THRESHOLD_SECONDS", default=5.0
+)
+# Hard per-WebUpdate caps so a single run cannot consume more than this many
+# rate-limited request/cost units even if vendor remaining is higher.
+RATE_LIMIT_MAX_REQUESTS_PER_RUN = env.int(
+    "RATE_LIMIT_MAX_REQUESTS_PER_RUN", default=10_000
+)
+RATE_LIMIT_MAX_COST_PER_RUN = env.int("RATE_LIMIT_MAX_COST_PER_RUN", default=100_000)
+# Give-up thresholds for a deferred unit task (closes the DONE barrier without
+# a sweeper — see design D9/D10).
+RATE_LIMIT_MAX_DEFER_ATTEMPTS = env.int("RATE_LIMIT_MAX_DEFER_ATTEMPTS", default=5)
+RATE_LIMIT_MAX_RUN_WALL_CLOCK_SECONDS = env.int(
+    "RATE_LIMIT_MAX_RUN_WALL_CLOCK_SECONDS", default=30 * 60
+)
+
 # Background tasks (Huey + Redis)
 # Redis connection string for the Huey consumer/producer. Only required when
 # actually running the background worker (`python manage.py run_huey`).

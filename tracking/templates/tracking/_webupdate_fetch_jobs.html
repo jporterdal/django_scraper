@@ -41,6 +41,8 @@ the scrape-history list via lazy expand.
                         <span class="badge text-bg-warning">Response too large</span>
                     {% elif job.status == 'blocked' %}
                         <span class="badge text-bg-dark">Blocked</span>
+                    {% elif job.status == 'give_up' %}
+                        <span class="badge text-bg-secondary">Gave up</span>
                     {% else %}
                         <span class="badge text-bg-secondary">{{ job.get_status_display }}</span>
                     {% endif %}

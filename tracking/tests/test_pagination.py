@@ -9,9 +9,10 @@ from unittest.mock import MagicMock
 
 from django.test import SimpleTestCase, TestCase
 
-from tracking.models import FetchJob, Source
+from tracking.models import FetchJob, SearchResult, Source, WebUpdate
 from tracking.parsers import ShopifyParser, StorepassParser
-from tracking.scrape import _run_parser_search, run_web_update
+from tracking.ratelimit.pacer import RateLimitPolicy
+from tracking.scrape import _run_parser_search, fetch_one_unit, run_web_update
 from tracking.tests.factories import make_item, make_item_source, make_source
 
 
@@ -252,3 +253,74 @@ class RunWebUpdatePaginationTests(TestCase):
 
         self.assertEqual(stats.result_count, 1)
         self.assertEqual(len(fetcher.get_calls), 1)
+
+
+class ProfiledPaginationDeferTests(TestCase):
+    """D14: a profiled source's mid-pagination Defer discards the attempt.
+
+    Page 1 succeeds and yields a hit; page 2 comes back HTTP 429. The Defer
+    (``_DeferSignal``) unwinds ``_run_parser_search`` before any FetchJob /
+    SearchResult is written and before ``parser.next_page_url`` is consulted
+    again, so nothing from page 1 is kept. A fresh ``fetch_one_unit`` call
+    (the next attempt) builds a brand-new parser with no memory of page 1 —
+    "restart from page 1" is really "there is no partial state anywhere to
+    resume from."
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.source = make_source(
+            key="f2fdefer",
+            name="F2F Defer",
+            parser_key="shopify",
+            base_search_url=(
+                "https://facetofacegames.com/apps/prod-indexer/search"
+                "/pageSize/100/page/1/keyword/{term}"
+            ),
+            max_pages=3,
+            rate_limit_profile="ietf",
+        )
+        cls.item = make_item(text="Lightning Bolt", active=True)
+        cls.item_source = make_item_source(cls.item, cls.source)
+
+    def test_defer_on_page_two_discards_page_one_results(self):
+        page1 = _json_response(_shopify_page(1))
+        page1.headers = {
+            "RateLimit-Limit": "1000",
+            "RateLimit-Remaining": "999",
+            "RateLimit-Reset": "60",
+        }
+        page2 = MagicMock(status_code=429, headers={"Retry-After": "30"})
+
+        fetcher = MagicMock()
+        fetcher.get.side_effect = [page1, page2]
+
+        # Headroom/interval knobs zeroed so the gate before each page is
+        # deterministically Ready — the Defer under test comes from the
+        # vendor's HTTP 429 on page 2, not from pacing math.
+        policy = RateLimitPolicy(
+            headroom_pct=0.0,
+            min_interval=0.0,
+            fair_interval=False,
+            short_wait_threshold=5.0,
+            max_requests_per_run=10_000,
+            max_cost_per_run=100_000,
+        )
+
+        webupdate = WebUpdate.objects.create(
+            status=WebUpdate.Status.PENDING, total_searches=1
+        )
+        result = fetch_one_unit(
+            webupdate, self.item_source, fetcher=fetcher, policy=policy
+        )
+
+        self.assertTrue(result.deferred)
+        self.assertEqual(result.decision.reason, "retry_after")
+
+        # Page 1's hit was parsed in-memory but never terminalized/stored.
+        self.assertFalse(FetchJob.objects.filter(webupdate=webupdate).exists())
+        self.assertEqual(SearchResult.objects.count(), 0)
+
+        # Exactly two sends: page 1 (200) then page 2 (429) — the Defer
+        # unwinds before a third page is ever requested.
+        self.assertEqual(fetcher.get.call_count, 2)

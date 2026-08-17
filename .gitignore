@@ -25,3 +25,4 @@ docs/
 planning/
 *.code-workspace
 logs/
+.claude/

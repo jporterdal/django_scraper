@@ -6,7 +6,7 @@ are mocked. Due-check cases use a fixed, timezone-aware ``now`` in America/Halif
 """
 
 from datetime import datetime, time
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 from django import forms
@@ -138,6 +138,16 @@ class DispatcherTests(TestCase):
             source=make_source(name="CC"),
         )
 
+    def setUp(self):
+        # dispatch_fan_out (D8) acquires an in-memory lock (D11) keyed on
+        # webupdate/item_source pks; TestCase's rolled-back transactions
+        # reuse those small pks across tests, so a lock left held by a test
+        # that mocked fetch_one (bypassing its release-on-terminalize) would
+        # otherwise leak into later tests. See tracking.locks.reset_in_memory_lock.
+        from tracking.locks import reset_in_memory_lock
+
+        reset_in_memory_lock()
+
     def test_get_due_schedules_filters_enabled_and_due(self):
         due = UpdateSchedule.objects.create(
             name="Due", frequency=DAILY, anchor_time=time(9, 0), enabled=True
@@ -154,17 +164,17 @@ class DispatcherTests(TestCase):
             name="Daily", frequency=DAILY, anchor_time=time(9, 0)
         )
         now = hfx(2026, 7, 8, 9, 5)
-        with patch("tracking.tasks.run_web_update_task") as mock_task:
+        with patch("tracking.tasks.fetch_one") as mock_fetch_one:
             dispatched = tasks.dispatch_due_schedules(now=now)
 
         self.assertEqual(len(dispatched), 1)
         webupdate = WebUpdate.objects.get()
         self.assertEqual(webupdate.status, WebUpdate.Status.PENDING)
         self.assertEqual(webupdate.total_searches, 1)
-        mock_task.assert_called_once()
-        self.assertEqual(mock_task.call_args.args[0], webupdate.pk)
-        # No tag -> all active items (item_ids is None).
-        self.assertIsNone(mock_task.call_args.kwargs["item_ids"])
+        # No tag -> all active items -> the single wired ItemSource.
+        mock_fetch_one.assert_called_once_with(
+            webupdate.pk, self.item_source.pk, attempt=0
+        )
         sched.refresh_from_db()
         self.assertEqual(sched.last_run_at, now)
 
@@ -178,11 +188,14 @@ class DispatcherTests(TestCase):
             name="Tagged", frequency=DAILY, anchor_time=time(9, 0), tag=tag
         )
         now = hfx(2026, 7, 8, 9, 5)
-        with patch("tracking.tasks.run_web_update_task") as mock_task:
+        with patch("tracking.tasks.fetch_one") as mock_fetch_one:
             tasks.dispatch_due_schedules(now=now)
 
-        item_ids = mock_task.call_args.kwargs["item_ids"]
-        self.assertEqual(list(item_ids), [self.item.pk])
+        webupdate = WebUpdate.objects.get()
+        # Only the tagged item's ItemSource fans out, not the untagged one.
+        mock_fetch_one.assert_called_once_with(
+            webupdate.pk, self.item_source.pk, attempt=0
+        )
         sched.refresh_from_db()
         self.assertEqual(sched.last_run_at, now)
 
@@ -192,32 +205,38 @@ class DispatcherTests(TestCase):
             name="Empty", frequency=DAILY, anchor_time=time(9, 0), tag=tag
         )
         now = hfx(2026, 7, 8, 9, 5)
-        with patch("tracking.tasks.run_web_update_task") as mock_task:
+        with patch("tracking.tasks.fetch_one") as mock_fetch_one:
             dispatched = tasks.dispatch_due_schedules(now=now)
 
         self.assertEqual(dispatched, [])
-        mock_task.assert_not_called()
+        mock_fetch_one.assert_not_called()
         self.assertEqual(WebUpdate.objects.count(), 0)
         sched.refresh_from_db()
         self.assertEqual(sched.last_run_at, now)
 
     def test_dispatch_runs_task_inline_in_immediate_mode(self):
-        # Immediate Huey (default under tests) runs the enqueued task inline;
-        # mock run_web_update so no Fetcher/network is touched.
+        # Immediate Huey (default under tests) runs the enqueued fetch_one
+        # task inline; mock Fetcher/parser search so no Fetcher/network is
+        # touched, and confirm the fan-out actually finishes (DONE).
         sched = UpdateSchedule.objects.create(
             name="Daily", frequency=DAILY, anchor_time=time(9, 0)
         )
         now = hfx(2026, 7, 8, 9, 5)
-        with patch("tracking.scrape.run_web_update") as mock_run:
-            # Immediate Huey pickles the task's return value, so hand back a
-            # simple picklable value rather than a MagicMock.
-            mock_run.return_value = None
-            tasks.dispatch_due_schedules(now=now)
+        with patch("tracking.scrape.Fetcher.from_settings", return_value=MagicMock()), \
+                patch("tracking.scrape._run_parser_search") as mock_run_parser:
+            from tracking.scrape import FetchOutcome
 
-        mock_run.assert_called_once()
+            mock_run_parser.return_value = FetchOutcome(
+                ok=True, http_status=200, error_message="", result_count=0
+            )
+            with patch.dict("tracking.parsers.sources", {"cc": MagicMock(return_value=MagicMock(results=[]))}):
+                tasks.dispatch_due_schedules(now=now)
+
         webupdate = WebUpdate.objects.get()
-        self.assertEqual(mock_run.call_args.kwargs["webupdate"], webupdate)
-        self.assertIsNone(mock_run.call_args.kwargs["items"])
+        webupdate.refresh_from_db()
+        self.assertEqual(webupdate.status, WebUpdate.Status.DONE)
+        self.assertEqual(webupdate.total_searches, 1)
+        self.assertEqual(webupdate.completed_searches, 1)
 
 
 class SchedulesMayNotFireHelperTests(TestCase):

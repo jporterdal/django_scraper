@@ -1,8 +1,8 @@
-"""Phase 3 Step 3 — Huey background updates + HTMX progress endpoint.
+"""Fan-out background updates (D8) + HTMX progress endpoint.
 
 These tests must pass with NO Redis running: Huey is configured in immediate
-(eager) mode under the test suite, so enqueuing ``run_web_update_task`` executes
-it inline in-process. All fetches are mocked; there is no network access.
+(eager) mode under the test suite, so enqueuing ``fetch_one`` executes it
+inline in-process. All fetches are mocked; there is no network access.
 """
 
 from unittest.mock import MagicMock, patch
@@ -12,11 +12,12 @@ from django.urls import reverse
 
 from huey.contrib.djhuey import HUEY
 
-from tracking.models import SearchResult, WebUpdate
+from tracking.locks import reset_in_memory_lock
+from tracking.models import FetchJob, SearchResult, WebUpdate
 from tracking.tests.factories import make_item, make_item_source
 from tracking.tests.base import AuthedClientTestCase, LinkedSourceTestCase
 from tracking.scrape import FetchOutcome
-from tracking.tasks import run_web_update_task
+from tracking.tasks import dispatch_fan_out, fetch_one
 
 
 def _ok_outcome(result_count=0):
@@ -32,13 +33,20 @@ def _mock_parser(results):
 
 
 class BackgroundUpdateTests(LinkedSourceTestCase):
+    def setUp(self):
+        super().setUp()
+        # D11's in-memory lock singleton is process-wide; TestCase's rolled
+        # back transactions reuse small pks across tests, so reset it each
+        # test (see tracking.locks.reset_in_memory_lock).
+        reset_in_memory_lock()
+
     def test_huey_runs_in_immediate_mode(self):
         # Guards the "no Redis needed for tests" contract for Step 3.
         self.assertTrue(HUEY.immediate)
 
     @patch("tracking.scrape.Fetcher.from_settings", return_value=MagicMock())
     @patch("tracking.scrape._run_parser_search")
-    def test_post_runs_task_inline_and_marks_done(self, mock_run_parser, _mock_fetcher):
+    def test_post_runs_fan_out_inline_and_marks_done(self, mock_run_parser, _mock_fetcher):
         mock_run_parser.return_value = _ok_outcome(result_count=1)
         mock_parser = _mock_parser([
             {"title": "Widget", "price": 9.99, "category": "Hardware", "instock": 1},
@@ -51,7 +59,8 @@ class BackgroundUpdateTests(LinkedSourceTestCase):
 
         self.assertEqual(response.status_code, 302)
         webupdate = WebUpdate.objects.get()
-        # Immediate mode ran the task inline, so the run is already finished.
+        # Immediate mode ran the fan-out's single unit task inline, so the
+        # run is already finished.
         self.assertEqual(webupdate.status, WebUpdate.Status.DONE)
         self.assertEqual(webupdate.total_searches, 1)
         self.assertEqual(webupdate.completed_searches, 1)
@@ -63,20 +72,17 @@ class BackgroundUpdateTests(LinkedSourceTestCase):
 
     @patch("tracking.scrape.Fetcher.from_settings", return_value=MagicMock())
     @patch("tracking.scrape._run_parser_search")
-    def test_task_scopes_to_item_ids(self, mock_run_parser, _mock_fetcher):
+    def test_dispatch_scopes_to_item_ids(self, mock_run_parser, _mock_fetcher):
         # A second active item-source that must NOT be searched when scoped.
         other = make_item(text="other item", active=True)
         make_item_source(other, self.source)
         mock_run_parser.return_value = _ok_outcome(result_count=0)
 
-        webupdate = WebUpdate.objects.create(
-            status=WebUpdate.Status.PENDING, total_searches=1
-        )
         with patch.dict(
             "tracking.parsers.sources",
             {"cc": MagicMock(return_value=_mock_parser([]))},
         ):
-            run_web_update_task(webupdate.pk, item_ids=[self.item.pk])
+            webupdate = dispatch_fan_out(item_ids=[self.item.pk])
 
         webupdate.refresh_from_db()
         self.assertEqual(webupdate.status, WebUpdate.Status.DONE)
@@ -84,24 +90,39 @@ class BackgroundUpdateTests(LinkedSourceTestCase):
         self.assertEqual(webupdate.total_searches, 1)
         self.assertEqual(webupdate.completed_searches, 1)
 
-    def test_task_marks_failed_when_run_web_update_raises(self):
+    def test_fetch_one_terminalizes_failed_on_unexpected_error(self):
         webupdate = WebUpdate.objects.create(
             status=WebUpdate.Status.PENDING, total_searches=1
         )
         with patch(
-            "tracking.scrape.run_web_update", side_effect=RuntimeError("boom")
+            "tracking.scrape.fetch_one_unit", side_effect=RuntimeError("boom")
         ):
-            # Immediate mode captures the task exception; it does not propagate.
-            run_web_update_task(webupdate.pk)
+            # Immediate mode captures the task exception; it does not
+            # propagate out of the outer call.
+            fetch_one(webupdate.pk, self.item_source.pk)
 
         webupdate.refresh_from_db()
-        self.assertEqual(webupdate.status, WebUpdate.Status.FAILED)
+        # A single unexpected unit failure terminalizes that unit as failed
+        # and still closes the barrier (D9) — WebUpdate.FAILED is reserved
+        # for fan-out/orchestrator failure only, not a single unit error.
+        self.assertEqual(webupdate.status, WebUpdate.Status.DONE)
+        self.assertEqual(webupdate.completed_searches, 1)
+        self.assertEqual(webupdate.error_count, 1)
+        job = FetchJob.objects.get(webupdate=webupdate)
+        self.assertEqual(job.status, FetchJob.Status.HTTP_ERROR)
 
-    def test_task_missing_webupdate_is_noop(self):
+    def test_fetch_one_missing_webupdate_is_noop(self):
         # Should not raise even though the row does not exist.
-        result = run_web_update_task(999999)
-        # In immediate mode the return value is a Result wrapper; the task itself
-        # returns None for a missing WebUpdate.
+        result = fetch_one(999999, self.item_source.pk)
+        # In immediate mode the return value is a Result wrapper; the task
+        # itself returns None for a missing WebUpdate.
+        self.assertIsNone(result())
+
+    def test_fetch_one_missing_item_source_is_noop(self):
+        webupdate = WebUpdate.objects.create(
+            status=WebUpdate.Status.PENDING, total_searches=1
+        )
+        result = fetch_one(webupdate.pk, 999999)
         self.assertIsNone(result())
 
 

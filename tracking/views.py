@@ -32,7 +32,7 @@ from .models import (
 )
 from .parsers import sources as parser_registry
 from .scheduling_status import schedules_may_not_fire
-from .tasks import run_web_update_task
+from .tasks import dispatch_fan_out
 import csv
 import json
 from collections import defaultdict
@@ -831,7 +831,6 @@ class UpdateFromWebView(View):
         if items is not None:
             search_qs = search_qs.filter(item__in=items)
         item_count = search_qs.values("item").distinct().count()
-        total_searches = search_qs.count()
 
         if item_count == 0:
             messages.warning(
@@ -841,19 +840,16 @@ class UpdateFromWebView(View):
             )
             return redirect("view_terms")
 
-        # Create the WebUpdate up front so the progress UI has something to poll,
-        # then hand the run off to the background worker instead of blocking the
-        # request. Under immediate mode (dev/test) the task runs inline.
-        webupdate = WebUpdate.objects.create(
-            status=WebUpdate.Status.PENDING,
-            total_searches=total_searches,
-        )
-
         item_ids = None
         if items is not None:
             item_ids = list(items.values_list("pk", flat=True))
 
-        run_web_update_task(webupdate.pk, item_ids=item_ids)
+        # Fan out one Huey task per ItemSource (D8): dispatch_fan_out creates
+        # the WebUpdate (PENDING, total_searches set) so the progress UI has
+        # something to poll, then hands each unit off to the background
+        # worker instead of blocking the request. Under immediate mode
+        # (dev/test) each unit task runs inline.
+        webupdate = dispatch_fan_out(item_ids=item_ids)
 
         messages.info(
             request,
