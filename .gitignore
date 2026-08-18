@@ -21,7 +21,6 @@ venv.bak/
 .coverage
 
 # Local files
-docs/
 planning/
 *.code-workspace
 logs/

@@ -1,0 +1,92 @@
+{
+  "resources": {
+    "results": {
+      "products": [
+        {
+          "available": true,
+          "body": "<p>A deep, rich medium roast taken to the very edge of second crack. This process unlocks a captivating interplay of the sweetness of dark fruit and the richness of toffee. An adventure in every sip.</p>\n<p>Rich, robust, and smooth sailing, CHASING TIDES brings you favourable winds in every cup. This adventurer\u2019s blend is lovingly crafted by Canada\u2019s first fairtrade and organic roastery, a 100% Canadian worker-owned co-op that collaborates with long-time small producer partners for coffee that goes with the flow in true seafaring spirit.</p>",
+          "compare_at_price_max": "0.00",
+          "compare_at_price_min": "0.00",
+          "handle": "chasing-tides-medium-roast",
+          "id": 8909748732066,
+          "image": "https://cdn.shopify.com/s/files/1/0407/8986/8706/files/CT_Medium_480x480_a4da2fe9-59f4-4327-bf63-c5f1acecf082.png?v=1770755403",
+          "price": "11.00",
+          "price_max": "11.00",
+          "price_min": "11.00",
+          "tags": [
+            "Fair  Trade",
+            "Medium Roast"
+          ],
+          "title": "Chasing Tides Medium Roast",
+          "type": "Coffee",
+          "url": "/products/chasing-tides-medium-roast?_pos=1&_psq=Chasing+Tides&_psid=530c7c8bb&_ss=e",
+          "variants": [],
+          "vendor": "Just Us! Retail",
+          "featured_image": {
+            "alt": "Chasing Tides Medium Roast",
+            "aspect_ratio": 1.0,
+            "height": 480,
+            "url": "https://cdn.shopify.com/s/files/1/0407/8986/8706/files/CT_Medium_480x480_a4da2fe9-59f4-4327-bf63-c5f1acecf082.png?v=1770755403",
+            "width": 480
+          }
+        },
+        {
+          "available": true,
+          "body": "<p>This lightly roasted blend balances the fresh-fruit acidity of berries with a hint of roasted nuts. With a layered presence and a lingering finish, it\u2019s the perfect brew for those who chart their own course.<br></p>\n<p>Rich, robust, and smooth sailing, CHASING TIDES brings you favourable winds in every cup. This adventurer\u2019s blend is lovingly crafted by Canada\u2019s first fairtrade and organic roastery, a 100% Canadian worker-owned co-op that collaborates with long-time small producer partners for coffee that goes with the flow in true seafaring spirit.</p>",
+          "compare_at_price_max": "0.00",
+          "compare_at_price_min": "0.00",
+          "handle": "chasing-tides-light-roast",
+          "id": 8909744832674,
+          "image": "https://cdn.shopify.com/s/files/1/0407/8986/8706/files/CT_Light_480x480_313e325a-57a9-4484-8014-1d8f1e3f15ff.png?v=1770754744",
+          "price": "11.00",
+          "price_max": "11.00",
+          "price_min": "11.00",
+          "tags": [
+            "Fair  Trade",
+            "Light Roast"
+          ],
+          "title": "Chasing Tides Light Roast",
+          "type": "Coffee",
+          "url": "/products/chasing-tides-light-roast?_pos=2&_psq=Chasing+Tides&_psid=530c7c8bb&_ss=e",
+          "variants": [],
+          "vendor": "Just Us! Retail",
+          "featured_image": {
+            "alt": "Chasing Tides Light Roast",
+            "aspect_ratio": 1.0,
+            "height": 480,
+            "url": "https://cdn.shopify.com/s/files/1/0407/8986/8706/files/CT_Light_480x480_313e325a-57a9-4484-8014-1d8f1e3f15ff.png?v=1770754744",
+            "width": 480
+          }
+        },
+        {
+          "available": true,
+          "body": "<p>Bold, smooth, and intensely aromatic. Pushed to the edge of caramelization, this coffee delivers a deep, roasty body with subtle hints of dark cocoa and smoke. Crafted for those who appreciate an intense experience.</p>\n<p>Rich, robust, and smooth sailing, CHASING TIDES brings you favourable winds in every cup. This adventurer\u2019s blend is lovingly crafted by Canada\u2019s first fairtrade and organic roastery, a 100% Canadian worker-owned co-op that collaborates with long-time small producer partners for coffee that goes with the flow in true seafaring spirit.</p>",
+          "compare_at_price_max": "0.00",
+          "compare_at_price_min": "0.00",
+          "handle": "chasing-tides-dark-roast",
+          "id": 8909750337698,
+          "image": "https://cdn.shopify.com/s/files/1/0407/8986/8706/files/CT_Dark_480x480_312e0cd1-79c4-4a37-84ca-37942e8baea1.png?v=1770755852",
+          "price": "11.00",
+          "price_max": "11.00",
+          "price_min": "11.00",
+          "tags": [
+            "Dark Roast",
+            "Fair  Trade"
+          ],
+          "title": "Chasing Tides Dark Roast",
+          "type": "Coffee",
+          "url": "/products/chasing-tides-dark-roast?_pos=3&_psq=Chasing+Tides&_psid=530c7c8bb&_ss=e",
+          "variants": [],
+          "vendor": "Just Us! Retail",
+          "featured_image": {
+            "alt": "Chasing Tides Dark Roast",
+            "aspect_ratio": 1.0,
+            "height": 480,
+            "url": "https://cdn.shopify.com/s/files/1/0407/8986/8706/files/CT_Dark_480x480_312e0cd1-79c4-4a37-84ca-37942e8baea1.png?v=1770755852",
+            "width": 480
+          }
+        }
+      ]
+    }
+  }
+}

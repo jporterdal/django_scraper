@@ -1,0 +1,308 @@
+{
+  "resources": {
+    "results": {
+      "products": [
+        {
+          "available": true,
+          "body": "Test info goes in here!",
+          "compare_at_price_max": "0.00",
+          "compare_at_price_min": "0.00",
+          "handle": "outlaw-effects-wrangler-compressor",
+          "id": 7260001796255,
+          "image": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/zyyfnasuv0fffqfv75qr.jpg?v=1641238301",
+          "price": "69.00",
+          "price_max": "69.00",
+          "price_min": "69.00",
+          "tags": [
+            "reverbsync-condition: Brand New",
+            "reverbsync-make:Outlaw Effects",
+            "reverbsync-shipping-profile:Free Shipping",
+            "reverbsync-shipping-profile:Wrangler Compressor"
+          ],
+          "title": "Outlaw Effects Wrangler Compressor Test",
+          "type": "Effects and Pedals",
+          "url": "/products/outlaw-effects-wrangler-compressor?_pos=1&_psq=pedal&_psid=68b369077&_ss=e",
+          "variants": [],
+          "vendor": "Fantasie Musical Instruments",
+          "featured_image": {
+            "alt": "Outlaw Effects Wrangler Compressor Test",
+            "aspect_ratio": 0.563,
+            "height": 800,
+            "url": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/zyyfnasuv0fffqfv75qr.jpg?v=1641238301",
+            "width": 450
+          }
+        },
+        {
+          "available": true,
+          "body": "<meta charset=\"utf-8\"><span data-mce-fragment=\"1\">Warm digital reverb brings your tone to life</span><br data-mce-fragment=\"1\"><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">Three reverb modes:</span><br data-mce-fragment=\"1\"><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">ROOM: Organic reverb sound of a smaller room.</span><br data-mce-fragment=\"1\"><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">PLATE: Simulates the thick sounds of plate reverbs made famous in the 60's and 70's.</span><br data-mce-fragment=\"1\"><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">SPRING: Unmistakable and essential sound of a classic spring reverb as found in many amplifiers.</span><br>",
+          "compare_at_price_max": "0.00",
+          "compare_at_price_min": "0.00",
+          "handle": "outlaw-effects-24k-reverb",
+          "id": 7262706040991,
+          "image": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/q5gmc1vvtrfihyqqx11p.jpg?v=1641675444",
+          "price": "109.00",
+          "price_max": "109.00",
+          "price_min": "109.00",
+          "tags": [
+            "reverbsync-condition: Brand New",
+            "reverbsync-make:Outlaw Effects",
+            "reverbsync-model:24K Reverb",
+            "reverbsync-shipping-profile:Free Shipping"
+          ],
+          "title": "Outlaw Effects 24K Reverb",
+          "type": "Effects and Pedals > Reverb",
+          "url": "/products/outlaw-effects-24k-reverb?_pos=2&_psq=pedal&_psid=68b369077&_ss=e",
+          "variants": [],
+          "vendor": "Fantasie Musical Instruments",
+          "featured_image": {
+            "alt": "Outlaw Effects 24K Reverb",
+            "aspect_ratio": 1.242,
+            "height": 644,
+            "url": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/q5gmc1vvtrfihyqqx11p.jpg?v=1641675444",
+            "width": 800
+          }
+        },
+        {
+          "available": true,
+          "body": "<meta charset=\"utf-8\"><span data-mce-fragment=\"1\">Scorching, saturated distortion with tight attack.</span><br data-mce-fragment=\"1\"><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">Three distinct EQ voicings:</span><br data-mce-fragment=\"1\"><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">BOOST OFF: Sinister, hard-hitting tones ideal for rhythm parts.</span><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">LO BOOST: Takes things into 80's territory with scooped mids.</span><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">HI BOOST: Devastating, razor sharp tone with blistering highs, ideal for darker amps and cutting through the heaviest rhythm sections.</span>",
+          "compare_at_price_max": "0.00",
+          "compare_at_price_min": "0.00",
+          "handle": "outlaw-effects-widow-maker",
+          "id": 7262704828575,
+          "image": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/m19bp4frpa9xtjmqslwn.jpg?v=1641673429",
+          "price": "69.00",
+          "price_max": "69.00",
+          "price_min": "69.00",
+          "tags": [
+            "reverbsync-condition: Brand New",
+            "reverbsync-make:Outlaw Effects",
+            "reverbsync-model:Widow Maker",
+            "reverbsync-shipping-profile:Free Shipping"
+          ],
+          "title": "Outlaw Effects Widow Maker",
+          "type": "Effects and Pedals > Distortion",
+          "url": "/products/outlaw-effects-widow-maker?_pos=3&_psq=pedal&_psid=68b369077&_ss=e",
+          "variants": [],
+          "vendor": "Fantasie Musical Instruments",
+          "featured_image": {
+            "alt": "Outlaw Effects Widow Maker",
+            "aspect_ratio": 0.889,
+            "height": 800,
+            "url": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/m19bp4frpa9xtjmqslwn.jpg?v=1641673429",
+            "width": 711
+          }
+        },
+        {
+          "available": true,
+          "body": "<meta charset=\"utf-8\"><span data-mce-fragment=\"1\">Crisp tone with warm repeats that dissolve naturally into your sound.</span><br data-mce-fragment=\"1\"><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">Delay time range from 20ms to 620ms can deliver everything from tight rockabilly slap back sounds to lengthy, ethereal repeats that build into self-oscillation.</span>",
+          "compare_at_price_max": "0.00",
+          "compare_at_price_min": "0.00",
+          "handle": "outlaw-effects-quick-draw-delay",
+          "id": 7273973973151,
+          "image": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/wk7tl6idhpzszswrni2i.jpg?v=1642476557",
+          "price": "79.00",
+          "price_max": "79.00",
+          "price_min": "79.00",
+          "tags": [
+            "reverbsync-condition: Brand New",
+            "reverbsync-make:Outlaw Effects",
+            "reverbsync-model:Quick Draw Delay",
+            "reverbsync-shipping-profile:Free Shipping"
+          ],
+          "title": "Outlaw Effects Quick Draw Delay",
+          "type": "Effects and Pedals > Delay",
+          "url": "/products/outlaw-effects-quick-draw-delay?_pos=4&_psq=pedal&_psid=68b369077&_ss=e",
+          "variants": [],
+          "vendor": "Fantasie Musical Instruments",
+          "featured_image": {
+            "alt": "Outlaw Effects Quick Draw Delay",
+            "aspect_ratio": 0.75,
+            "height": 800,
+            "url": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/wk7tl6idhpzszswrni2i.jpg?v=1642476557",
+            "width": 600
+          }
+        },
+        {
+          "available": true,
+          "body": "<meta charset=\"utf-8\"><span data-mce-fragment=\"1\">Wide array of gritty, overdriven tones; at home across multiple genres.</span><br data-mce-fragment=\"1\"><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">Two distinct overdrive modes:</span><br data-mce-fragment=\"1\"><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">EIGHTS: Smooth, amp-like breakup perfect for rhythm, warm blues styles, etc.</span><br data-mce-fragment=\"1\"><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">ACES: Hotter, thicker overdrive with added sustain, suitable for soaring lead parts</span>",
+          "compare_at_price_max": "0.00",
+          "compare_at_price_min": "0.00",
+          "handle": "outlaw-effects-deadman-s-hand",
+          "id": 7262705942687,
+          "image": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/tkd7msfb7bvbabwaqx1p.jpg?v=1641674294",
+          "price": "79.00",
+          "price_max": "79.00",
+          "price_min": "79.00",
+          "tags": [
+            "reverbsync-condition: Brand New",
+            "reverbsync-make:Outlaw Effects",
+            "reverbsync-model:Deadman's Hand",
+            "reverbsync-shipping-profile:Free Shipping"
+          ],
+          "title": "Outlaw Effects Deadman\u2019s Hand",
+          "type": "Effects and Pedals > Overdrive and Boost",
+          "url": "/products/outlaw-effects-deadman-s-hand?_pos=5&_psq=pedal&_psid=68b369077&_ss=e",
+          "variants": [],
+          "vendor": "Fantasie Musical Instruments",
+          "featured_image": {
+            "alt": "Outlaw Effects Deadman\u2019s Hand",
+            "aspect_ratio": 0.674,
+            "height": 800,
+            "url": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/tkd7msfb7bvbabwaqx1p.jpg?v=1641674294",
+            "width": 539
+          }
+        },
+        {
+          "available": true,
+          "body": "<meta charset=\"utf-8\"><span data-mce-fragment=\"1\">20db+ of pure, pristine, transparent boost.</span><br data-mce-fragment=\"1\"><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">Tweak even further thanks to two \u00b115dB active EQ controls.</span><br data-mce-fragment=\"1\"><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">Gain Control lets you add in warm, subtle overdrive</span><br data-mce-fragment=\"1\"><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">Add harmonic content, enhance your tube amp or other effects in your chain, or simply go up a few volume notches.</span>",
+          "compare_at_price_max": "0.00",
+          "compare_at_price_min": "0.00",
+          "handle": "outlaw-effects-boiler-maker-boost",
+          "id": 7273969713311,
+          "image": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/jbiwzhy6iiuitctr9kwq.jpg?v=1642476404",
+          "price": "79.00",
+          "price_max": "79.00",
+          "price_min": "79.00",
+          "tags": [
+            "reverbsync-condition: Brand New",
+            "reverbsync-make:Outlaw Effects",
+            "reverbsync-model:Boiler Maker Boost",
+            "reverbsync-shipping-profile:Free Shipping"
+          ],
+          "title": "Outlaw Effects Boiler Maker Boost",
+          "type": "Effects and Pedals > Overdrive and Boost",
+          "url": "/products/outlaw-effects-boiler-maker-boost?_pos=6&_psq=pedal&_psid=68b369077&_ss=e",
+          "variants": [],
+          "vendor": "Fantasie Musical Instruments",
+          "featured_image": {
+            "alt": "Outlaw Effects Boiler Maker Boost",
+            "aspect_ratio": 0.75,
+            "height": 800,
+            "url": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/jbiwzhy6iiuitctr9kwq.jpg?v=1642476404",
+            "width": 600
+          }
+        },
+        {
+          "available": true,
+          "body": "<meta charset=\"utf-8\"><span data-mce-fragment=\"1\">Enhances your tone with a sparkling modulation effect</span><br data-mce-fragment=\"1\"><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">From a subtle, ambient shimmer to more dramatic effects with pulsating tones.</span><br data-mce-fragment=\"1\"><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">Reacts equally well to rhythm chords and lead work, and can even be used for acoustic guitar.</span>",
+          "compare_at_price_max": "0.00",
+          "compare_at_price_min": "0.00",
+          "handle": "outlaw-effects-vigilante-chorus",
+          "id": 7262708334751,
+          "image": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/wfg9j8takqxtmq8ixnoy.jpg?v=1641675664",
+          "price": "79.00",
+          "price_max": "79.00",
+          "price_min": "79.00",
+          "tags": [
+            "reverbsync-condition: Brand New",
+            "reverbsync-make:Outlaw Effects",
+            "reverbsync-model:Vigilante Chorus",
+            "reverbsync-shipping-profile:Free Shipping"
+          ],
+          "title": "Outlaw Effects Vigilante Chorus",
+          "type": "Effects and Pedals > Chorus and Vibrato",
+          "url": "/products/outlaw-effects-vigilante-chorus?_pos=7&_psq=pedal&_psid=68b369077&_ss=e",
+          "variants": [],
+          "vendor": "Fantasie Musical Instruments",
+          "featured_image": {
+            "alt": "Outlaw Effects Vigilante Chorus",
+            "aspect_ratio": 0.619,
+            "height": 800,
+            "url": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/wfg9j8takqxtmq8ixnoy.jpg?v=1641675664",
+            "width": 495
+          }
+        },
+        {
+          "available": true,
+          "body": "<meta charset=\"utf-8\"><span data-mce-fragment=\"1\">Easy to learn and fun to play! Great as an introduction to music or for fun with friends. The jaw harp is played by holding the instrument between the teeth and or lips. You then pluck the metal reed with your finger. This simple instrument gives you an amazing range of tones and pitches just by varying your mouth shape and degree of plucking.</span>",
+          "compare_at_price_max": "0.00",
+          "compare_at_price_min": "0.00",
+          "handle": "alto-austrian-jaw-harp",
+          "id": 7262708924575,
+          "image": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/kek3shbmbmqzjkrojgta.jpg?v=1641675931",
+          "price": "15.99",
+          "price_max": "15.99",
+          "price_min": "15.99",
+          "tags": [
+            "reverbsync-condition: Brand New",
+            "reverbsync-make:Alto",
+            "reverbsync-model:Austrian Jaw Harp",
+            "reverbsync-shipping-profile:Free Shipping"
+          ],
+          "title": "Alto Austrian Jaw Harp",
+          "type": "Effects and Pedals > Compression and Sustain",
+          "url": "/products/alto-austrian-jaw-harp?_pos=8&_psq=pedal&_psid=68b369077&_ss=e",
+          "variants": [],
+          "vendor": "Fantasie Musical Instruments",
+          "featured_image": {
+            "alt": "Alto Austrian Jaw Harp",
+            "aspect_ratio": 0.75,
+            "height": 800,
+            "url": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/kek3shbmbmqzjkrojgta.jpg?v=1641675931",
+            "width": 600
+          }
+        },
+        {
+          "available": true,
+          "body": "<meta charset=\"utf-8\"><span data-mce-fragment=\"1\">Vintage, warm, tubey sounding overdrive.</span><br data-mce-fragment=\"1\"><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">Get everything from a boosted clean sound to edgy, crunchy driven tone.</span><br data-mce-fragment=\"1\"><br data-mce-fragment=\"1\"><span data-mce-fragment=\"1\">Pushes your favorite tube amp to the sweet spot.</span>",
+          "compare_at_price_max": "0.00",
+          "compare_at_price_min": "0.00",
+          "handle": "outlaw-effects-hangman",
+          "id": 7262705189023,
+          "image": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/xjboefr1hytq17jde4nv.jpg?v=1641673906",
+          "price": "69.00",
+          "price_max": "69.00",
+          "price_min": "69.00",
+          "tags": [
+            "reverbsync-condition: Brand New",
+            "reverbsync-make:Outlaw Effects",
+            "reverbsync-model:Hangman",
+            "reverbsync-shipping-profile:Free Shipping"
+          ],
+          "title": "Outlaw Effects Hangman",
+          "type": "Effects and Pedals > Overdrive and Boost",
+          "url": "/products/outlaw-effects-hangman?_pos=9&_psq=pedal&_psid=68b369077&_ss=e",
+          "variants": [],
+          "vendor": "Fantasie Musical Instruments",
+          "featured_image": {
+            "alt": "Outlaw Effects Hangman",
+            "aspect_ratio": 0.706,
+            "height": 800,
+            "url": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/xjboefr1hytq17jde4nv.jpg?v=1641673906",
+            "width": 565
+          }
+        },
+        {
+          "available": true,
+          "body": "<meta charset=\"utf-8\">\n<div class=\"item2-description__content\" data-mce-fragment=\"1\">The MXR Booster Mini gives you the sonic secret sauce of the Echoplex Preamp with the legendary boosting power of the MXR Micro Amp in a lightweight, space-saving mini housing. The Volume control has up to +25dB on tap while the Tone control rolls off highs. To add a little extra grit to your signal, adjust the internal Echoplex Preamp level control. Put the MXR Booster Mini on your board to save space, season up your tone, and fly high above the mix.</div>",
+          "compare_at_price_max": "0.00",
+          "compare_at_price_min": "0.00",
+          "handle": "mxr-booster-mini",
+          "id": 7262704894111,
+          "image": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/eq74oewho1tglsbwd8el.jpg?v=1641673641",
+          "price": "159.00",
+          "price_max": "159.00",
+          "price_min": "159.00",
+          "tags": [
+            "reverbsync-condition: Brand New",
+            "reverbsync-make:Mini Booster",
+            "reverbsync-model:MXR",
+            "reverbsync-shipping-profile:Free Shipping"
+          ],
+          "title": "MXR Booster Mini",
+          "type": "Effects and Pedals > Overdrive and Boost",
+          "url": "/products/mxr-booster-mini?_pos=10&_psq=pedal&_psid=68b369077&_ss=e",
+          "variants": [],
+          "vendor": "Fantasie Musical Instruments",
+          "featured_image": {
+            "alt": "MXR Booster Mini",
+            "aspect_ratio": 0.85,
+            "height": 800,
+            "url": "https://cdn.shopify.com/s/files/1/0598/3984/0415/products/eq74oewho1tglsbwd8el.jpg?v=1641673641",
+            "width": 680
+          }
+        }
+      ]
+    }
+  }
+}

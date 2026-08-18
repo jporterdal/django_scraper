@@ -1,0 +1,96 @@
+{
+  "resources": {
+    "results": {
+      "products": [
+        {
+          "available": true,
+          "body": "<h2 style=\"text-align: left;\">Single-Origin Ethiopian Coffee with Floral Aromatics</h2>\n<p style=\"text-align: left;\"><span>Journey to the renowned Yirgacheffe region of Ethiopia with our exquisite Ethiopia Yirgacheffe coffee. Imbued with floral aromatics and tropical citrus notes, this coffee offers a delicate tea-like body, vibrant acidity, and a lingering honey sweetness.</span></p>\n<p style=\"text-align: left;\"><strong>Origin: </strong>Yirgacheffe, Ethiopia<strong><br>Varietal: </strong>Heirloom<br><strong>Elevation: </strong>1700-2000MASL<strong><br>Notes:</strong> Lemon, Honey, Black Tea<br><strong>Process:</strong> Washed<br><strong>Roast:</strong> Light</p>",
+          "compare_at_price_max": "0.00",
+          "compare_at_price_min": "0.00",
+          "handle": "yirgacheffe",
+          "id": 6539316396126,
+          "image": "https://cdn.shopify.com/s/files/1/0022/6232/files/Yirgacheffebag.png?v=1695219978",
+          "price": "20.00",
+          "price_max": "115.00",
+          "price_min": "20.00",
+          "tags": [
+            "Light Roast"
+          ],
+          "title": "Ethiopia Yirgacheffe",
+          "type": "Coffee",
+          "url": "/products/yirgacheffe?_pos=1&_psq=Ethiopia&_psid=68d99ab53&_ss=e",
+          "variants": [],
+          "vendor": "Java Blend",
+          "featured_image": {
+            "alt": "Ethiopia Yirgacheffe",
+            "aspect_ratio": 0.877,
+            "height": 3446,
+            "url": "https://cdn.shopify.com/s/files/1/0022/6232/files/Yirgacheffebag.png?v=1695219978",
+            "width": 3022
+          }
+        },
+        {
+          "available": true,
+          "body": "<p style=\"text-align: left;\">You have been patient...it is back and tasting even better than before! The Ethiopian Natural you kept asking us for! This coffee graced our shelves for years before taking an almost 3 year hiatus. We are so happy to have this coffee back for you to enjoy!</p>\n<p style=\"text-align: left;\"><strong><br>Producer: </strong>Daye Bensa<strong>\u00a0<br>Origin: </strong>Sidama, Ethiopia<strong><br>Varietals: </strong>Heirloom<strong><br>Notes:</strong> Ripe Strawberry, Blueberry, Peach, Floral, Sweet Finish<br><strong>Process:</strong> Natural<br><strong>Roast:</strong> Light</p>",
+          "compare_at_price_max": "0.00",
+          "compare_at_price_min": "0.00",
+          "handle": "ardi",
+          "id": 4251292,
+          "image": "https://cdn.shopify.com/s/files/1/0022/6232/files/Ethiopia_Ardi_Shopify.jpg?v=1782760563",
+          "price": "19.00",
+          "price_max": "19.00",
+          "price_min": "19.00",
+          "tags": [
+            "Light Roast",
+            "Micro-Lot Coffees",
+            "Single Origin"
+          ],
+          "title": "Ethiopia Ardi",
+          "type": "Coffee",
+          "url": "/products/ardi?_pos=2&_psq=Ethiopia&_psid=68d99ab53&_ss=e",
+          "variants": [],
+          "vendor": "Java Blend",
+          "featured_image": {
+            "alt": "Ethiopia Ardi",
+            "aspect_ratio": 0.672,
+            "height": 1728,
+            "url": "https://cdn.shopify.com/s/files/1/0022/6232/files/Ethiopia_Ardi_Shopify.jpg?v=1782760563",
+            "width": 1161
+          }
+        },
+        {
+          "available": false,
+          "body": "<h2 style=\"text-align: left;\"><span>Single-Origin Ethiopian Coffee with Tasting Notes of Berries and Spiced Chocolate</span></h2>\n<p style=\"text-align: left;\"><span>This natural processed coffee hails from the esteemed Guji region in Ethiopia. Revered for its exceptional quality, this coffee has vibrant notes of berries, spiced chocolate and florals.\u00a0</span></p>\n<p style=\"text-align: left;\"><strong>Origin: </strong>Guji, Ethiopia<br><strong>Varietal: </strong>Heirloom<br><strong>Elevation:</strong>\u00a01700 - 1900 MASL<strong>\u00a0<br>Notes:</strong>\u00a0Berry, Spiced Chocolate, Floral<br><strong>Process:</strong> Natural<br><strong>Roast:</strong> Medium</p>\n<p>\u00a0</p>",
+          "compare_at_price_max": "0.00",
+          "compare_at_price_min": "0.00",
+          "handle": "guji",
+          "id": 23525942,
+          "image": "https://cdn.shopify.com/s/files/1/0022/6232/files/Gujibag.png?v=1695220048",
+          "price": "19.00",
+          "price_max": "115.00",
+          "price_min": "19.00",
+          "tags": [
+            "Africa",
+            "Berries",
+            "Medium Roast",
+            "Relationship",
+            "Roast_Medium",
+            "Spiced Chocolate"
+          ],
+          "title": "Ethiopia Guji",
+          "type": "Coffee",
+          "url": "/products/guji?_pos=3&_psq=Ethiopia&_psid=68d99ab53&_ss=e",
+          "variants": [],
+          "vendor": "Java Blend",
+          "featured_image": {
+            "alt": "Ethiopia Guji",
+            "aspect_ratio": 0.877,
+            "height": 3446,
+            "url": "https://cdn.shopify.com/s/files/1/0022/6232/files/Gujibag.png?v=1695220048",
+            "width": 3022
+          }
+        }
+      ]
+    }
+  }
+}
