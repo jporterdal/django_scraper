@@ -467,9 +467,6 @@ class SearchableListView(ListView):
         if tag_id:
             queryset = queryset.filter(tags__id=tag_id).distinct()
 
-        # Two-step annotate so OuterRef("pk") in the cheapest filter correlates to
-        # SearchableItem, not an intermediate SearchResult alias (nested Subquery
-        # bug: update_id=Subquery(OuterRef("pk")) resolved to V0.id).
         last_checked = Subquery(
             FetchJob.objects.filter(
                 item=OuterRef("pk"),
@@ -478,22 +475,37 @@ class SearchableListView(ListView):
             .order_by("-webupdate__timestamp")
             .values("webupdate__timestamp")[:1]
         )
-        queryset = queryset.annotate(
-            _latest_storing_update_id=Subquery(
-                SearchResult.objects.filter(item=OuterRef("pk"), instock=1)
-                .order_by("-update__timestamp")
-                .values("update_id")[:1]
-            ),
-        )
-        cheapest = SearchResult.objects.filter(
-            item=OuterRef("pk"),
-            update_id=OuterRef("_latest_storing_update_id"),
+
+        # Each source's own most recent in-stock price. Scraper dedup skips
+        # re-storing a SearchResult when a source's price is unchanged, so a
+        # source's last stored row remains its current price even if other
+        # sources get re-checked/stored on later updates — comparing sources
+        # only within one shared "latest" update would silently drop stale-
+        # but-still-current sources from the min-price comparison.
+        source_latest = SearchResult.objects.filter(
+            item=OuterRef("item_id"),
+            source=OuterRef("source_id"),
             instock=1,
-        ).order_by("price", "source_id")
+        ).order_by("-update__timestamp")
+        cheapest_item_source = (
+            ItemSource.objects.filter(item=OuterRef("pk"))
+            .annotate(
+                _latest_price=Subquery(source_latest.values("price")[:1]),
+                _latest_title=Subquery(source_latest.values("title")[:1]),
+            )
+            .exclude(_latest_price__isnull=True)
+            .order_by("_latest_price", "source_id")
+        )
         return queryset.annotate(
-            latest_known_minprice=Subquery(cheapest.values("price")[:1]),
-            latest_known_minprice_title=Subquery(cheapest.values("title")[:1]),
-            latest_known_minprice_source=Subquery(cheapest.values("source_id")[:1]),
+            latest_known_minprice=Subquery(
+                cheapest_item_source.values("_latest_price")[:1]
+            ),
+            latest_known_minprice_title=Subquery(
+                cheapest_item_source.values("_latest_title")[:1]
+            ),
+            latest_known_minprice_source=Subquery(
+                cheapest_item_source.values("source_id")[:1]
+            ),
             last_checked_at=last_checked,
         )
 
