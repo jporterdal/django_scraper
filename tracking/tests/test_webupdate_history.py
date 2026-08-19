@@ -73,7 +73,7 @@ class WebUpdateHistoryTests(AuthedClientTestCase):
         self.assertContains(page2, str(oldest_on_page2.result_count))
         self.assertContains(page2, "Page 2 of 2")
         self.assertContains(page2, "Previous")
-        self.assertNotContains(page2, str(newest.result_count))
+        self.assertNotContains(page2, reverse("webupdate_fetch_jobs", args=[newest.pk]))
 
     def test_list_initial_render_does_not_query_fetch_jobs(self):
         update = self._create_update()
