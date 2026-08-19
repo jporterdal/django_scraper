@@ -103,6 +103,29 @@ class SparklineSourceScopedTests(AuthedClientTestCase):
         self.assertIsNone(annotated.latest_known_minprice_source)
         self.assertEqual(item_data["price_history"], [])
 
+    def test_latest_price_keeps_stale_cheaper_source(self):
+        """A source not re-checked in the latest run still wins if it's cheapest.
+
+        Regression test: min-price comparison must use each source's own most
+        recent in-stock price, not be scoped to whichever single WebUpdate
+        happened to store a row most recently (dedup skips storing unchanged
+        prices, so a stale-but-still-current source was previously dropped
+        from the comparison entirely).
+        """
+        older = self._stamp(make_web_update(), timezone.now() - timedelta(days=1))
+        make_search_result(self.item, self.src_a, older, title="A", price=9.99)
+        make_search_result(self.item, self.src_b, older, title="B", price=5.25)
+
+        # Only src_a is re-checked/stored on the newer update; src_b's price
+        # is unchanged so no new row is stored for it here.
+        newer = self._stamp(make_web_update(), timezone.now())
+        make_search_result(self.item, self.src_a, newer, title="A", price=7.99)
+
+        context = self._list_context()
+        annotated = self._annotated_item(context["object_list"])
+        self.assertEqual(annotated.latest_known_minprice, 5.25)
+        self.assertEqual(annotated.latest_known_minprice_source, self.src_b.key)
+
     def test_price_history_carry_forward_on_unchanged_dedup(self):
         base = timezone.now() - timedelta(days=3)
         stored_update = self._stamp(make_web_update(), base)
