@@ -83,7 +83,7 @@ SHOPIFY_PAGE = {
         "hits": [
             {
                 "_source": {
-                    "title": "Test Card",
+                    "title": "Second Item",
                     "variants": [
                         {"price": 9.99, "inventoryQuantity": 3, "selectedOptions": []}
                     ],

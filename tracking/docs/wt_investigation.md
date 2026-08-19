@@ -173,7 +173,7 @@ Pagination: increment `context.page` in the POST body.
 | **Third-party host** — `app-filters.wizardtower.com` external to Shopify | High | Pin fixtures; monitor API availability |
 | **CORS / Origin checks** — API may require storefront Origin | Medium | Send `Origin` + `Referer` headers |
 | **Variant detail** — search results collapse variants (`variant_count` > 1) | Medium | May need `/api/stock` POST for per-condition prices |
-| **Large result sets** — 627 hits for common card names | Low | Paginate; use pattern filters |
+| **Generic/broad search matching** — vendor search is not phrase-aware; e.g. `"The Queen of Dale"` returns 30,277 total results including non-cards (`"Deck Box - The Hobbit - The Queen Of Dale"`) and unrelated cards sharing only some words (`"Chip 'N' Dale, Recovery Rangers"`); `"Fire Dragon"` (an MTG card) returns listings of `"Dragon Fire"`, a different card from a different game (Disney Lorcana) | Medium | `JSONSearchParser` now rejects any result row whose title does not contain the search term as a contiguous phrase (see the `search-term-relevance` capability / `WtFiltersParser`) — a baseline, always-on filter, independent of the optional per-item `ItemSource` patterns below |
 | **Foil ambiguity** — titles include finish in name/tags | Low | `ItemSource` exclude patterns |
 
 ---
