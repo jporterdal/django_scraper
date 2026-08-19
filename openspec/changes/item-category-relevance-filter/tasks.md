@@ -1,45 +1,63 @@
-## 1. Design fork resolution (blocking — do first)
+## 1. Prerequisites
 
-- [ ] 1.1 Decide Option A vs. Option B from `design.md`'s Open Questions: does the per-row category signal reuse the existing `category` kwarg/field on `add_result`/`SearchResult` (Option A), or does a new, distinct field get threaded through (Option B)?
-- [ ] 1.2 If Option B: pick the new kwarg/field name (e.g. `product_category`) and decide whether it is persisted on `SearchResult`/displayed in the UI, or consumed transiently during filtering only
-- [ ] 1.3 Confirm `search-term-relevance-filter` has been implemented and merged (this change's `add_result` wiring assumes its gate already exists)
+- [ ] 1.1 Confirm `search-term-relevance-filter` has been implemented and merged (this change's `add_result` wiring assumes its gate already exists)
 
 ## 2. Data model
 
-- [ ] 2.1 Add the new plain-text expected-category field to `SearchableItem` (`tracking/models.py`), blank by default
-- [ ] 2.2 Generate and apply the Django migration for the new field
-- [ ] 2.3 Expose the field in the relevant item create/edit form(s) (`tracking/forms.py`) and templates, labeled in user-facing plain-text terms (no mention of regex)
+- [ ] 2.1 Add `expected_product_line` plain-text field to `SearchableItem` (`tracking/models.py`), blank by default
+- [ ] 2.2 Add `expected_category` plain-text field to `SearchableItem` (`tracking/models.py`), blank by default, independent of `expected_product_line`
+- [ ] 2.3 Add `product_line` column to `SearchResult` (`tracking/models.py`), populated at storage time from the parser's product-line signal
+- [ ] 2.4 Add a new `ObservedCategoryValue` model (`tracking/models.py`): `source` (FK to `Source`), `field_name` (choice: `"category"` | `"product_line"`), `value` (raw string as observed), `last_seen` (updated on every repeat observation); unique together on `(source, field_name, value)`
+- [ ] 2.5 Generate and apply the Django migration for all new fields/columns/table (2.1–2.4)
+- [ ] 2.6 Add a one-time data migration backfilling `ObservedCategoryValue(field_name="category")` from distinct historical `SearchResult.category` values, grouped by `source` — restores immediate suggestion coverage for `category` on deploy; `product_line` has no equivalent backfill source and starts cold regardless (see design.md Decision 9)
+- [ ] 2.7 Expose `expected_product_line` and `expected_category` in the relevant item create/edit form(s) (`tracking/forms.py`) and templates, labeled in user-facing plain-text terms (no mention of regex)
 
 ## 3. Base-class filtering
 
-- [ ] 3.1 Add a normalized-substring-match helper to `JSONSearchParser` (`tracking/parsers.py`) that case-folds and whitespace-collapses both the item's expected category value and a candidate row's category signal, `re.escape()`s the expected value, and reports whether it appears as a substring
-- [ ] 3.2 Wire the helper into `JSONSearchParser.add_result` (per the Task 1 decision) so a row is only appended to `self.results` when it passes both the existing term-relevance check and this new category check
-- [ ] 3.3 Skip the category check entirely (pass all rows) when the item's expected category value is blank
-- [ ] 3.4 Add a DEBUG-level log line when a row is rejected for category mismatch, including the title, the row's category signal, and the item's expected value, without raising or affecting `FetchJob` status
+- [ ] 3.1 Add a normalized-substring-match helper to `JSONSearchParser` (`tracking/parsers.py`) that case-folds and whitespace-collapses both an expected value and a candidate row's signal, `re.escape()`s the expected value, and reports whether it appears as a substring
+- [ ] 3.2 Widen `JSONSearchParser.add_result` to `add_result(title, price, instock, category="", product_line="")` and wire the helper in for both `expected_product_line` (checked against `product_line`) and `expected_category` (checked against `category`), so a row is only appended to `self.results` when it passes the term-relevance check and both new checks
+- [ ] 3.3 Skip each check independently (pass all rows on that axis) when its corresponding expected value is blank — `expected_product_line` being blank must not affect the `expected_category` check, and vice versa
+- [ ] 3.4 Add a DEBUG-level log line when a row is rejected for product-line or category mismatch, including the title, the row's signal(s), and the item's expected value(s), without raising or affecting `FetchJob` status
+- [ ] 3.5 Add an **unconditional** `ObservedCategoryValue` upsert in `add_result` for every row processed — both the `category` and `product_line` raw signals, whenever non-blank — running *before* the term-relevance/`expected_product_line`/`expected_category` checks decide whether the row is kept. Unlike 3.4's log line, this must NOT be gated on rejection: it fires for accepted and rejected rows alike (this is what lets the value-discovery UI in Section 5 see collisions that filtering would otherwise hide)
+- [ ] 3.6 Update the storage code path that persists `SearchResult` rows to also store the new `product_line` value
 
 ## 4. Vendor parser wiring
 
-- [ ] 4.1 Update `WtFiltersParser.parse_data` to supply its category/product-line signal (`row["category"]`, per design.md) into the check, per the Task 1 decision
-- [ ] 4.2 Update `ShopifyParser.parse_data` to supply its category/product-line signal (`src["General_Game_Type"]` or `src["Game Type"]`, per design.md) into the check, per the Task 1 decision
-- [ ] 4.3 Update `StorepassParser.parse_data` to supply its category/product-line signal (`product["vendor"]`, per design.md) into the check, per the Task 1 decision
-- [ ] 4.4 If Option A was chosen in Task 1, confirm and document the resulting display-behavior change for existing `category` output (`wt`/`f2f`/`hfx` now show product line instead of set name) in `searchableitem_detail.html` and CSV/JSON export
+- [ ] 4.1 Update `WtFiltersParser.parse_data` to supply `row["category"]` as the `product_line` signal (new extraction — the existing `category` signal via `subcategory`/`category` is unchanged)
+- [ ] 4.2 Update `ShopifyParser.parse_data` to supply `src["General_Game_Type"]` (or `src["Game Type"]`) as the `product_line` signal (new extraction — the existing `category` signal via `MTG_Set_Name`/`Set` is unchanged)
+- [ ] 4.3 Update `StorepassParser.parse_data` to supply `product["vendor"]` as the `product_line` signal (new extraction — the existing `category` signal via `productLineData["set"]` is unchanged)
+- [ ] 4.4 Confirm no display-behavior change to existing `category` output for `wt`/`f2f`/`hfx` — `category`'s meaning and column are untouched by this change; `product_line` is purely additive
 
-## 5. Fixtures
+## 5. Value-discovery UI
 
-- [ ] 5.1 Add a same-title, different-category row to `tracking/fixtures/html/wt/search_results_sample.json` (or a supplementary fixture) exercising the reject path
-- [ ] 5.2 Add an equivalent same-title, different-category row to the `f2f` fixture
-- [ ] 5.3 Add an equivalent same-title, different-category row to the `hfx` fixture
+- [ ] 5.1 Add a query/view helper returning distinct `ObservedCategoryValue` values (not `SearchResult`) for `field_name="product_line"` and `field_name="category"`, grouped by `Source.key` and ordered by `-last_seen`, scoped to the `Source`s used by a given item's configured `ItemSource`s
+- [ ] 5.2 Wire the helper into the `SearchableItem` create/edit form as a `datalist` (or equivalent) attached to the `expected_product_line` and `expected_category` inputs
+- [ ] 5.3 Confirm the form degrades gracefully (plain free-text input, no error) when an item has no configured sources or no `ObservedCategoryValue` rows yet
 
-## 6. Test coverage
+## 6. Fixtures
 
-- [ ] 6.1 Add a `JSONSearchParser`/base-class unit test exercising: category match (included), category mismatch (excluded), blank expected category (pass-through), case-insensitivity, incidental whitespace, and a value containing regex metacharacters matched literally
-- [ ] 6.2 Extend `tracking/tests/test_wtfilters_parser.py` using the fixture from 5.1, asserting the off-category row is excluded while the matching row is retained
-- [ ] 6.3 Extend the `ShopifyParser` fixture tests (`tracking/tests/test_parsers.py`) using the fixture from 5.2
-- [ ] 6.4 Extend the `StorepassParser` fixture tests (`tracking/tests/test_parsers.py`) using the fixture from 5.3
-- [ ] 6.5 Add/extend a `SearchableItem` model or form test confirming the new field defaults to blank and round-trips correctly
-- [ ] 6.6 Run the full `tracking` test suite and confirm no existing assertions (result counts, fixture-derived rows, category display values) regress
+- [ ] 6.1 Add a same-title, different-product-line row to `tracking/fixtures/html/wt/search_results_sample.json` (or a supplementary fixture) exercising the `expected_product_line` reject path
+- [ ] 6.2 Add an equivalent same-title, different-product-line row to the `f2f` fixture
+- [ ] 6.3 Add an equivalent same-title, different-product-line row to the `hfx` fixture
+- [ ] 6.4 Add a same-product-line, different-category (set) row to at least one fixture exercising the `expected_category` reject path independently of `expected_product_line`
 
-## 7. Documentation
+## 7. Test coverage
 
-- [ ] 7.1 Update `tracking/docs/wt_investigation.md`, `f2f_investigation.md`, and `hfx_investigation.md` to note which raw field now feeds the category-relevance check
-- [ ] 7.2 Add a short note to each vendor's fixture `README.md` that future fixture refreshes should ideally include at least one off-category row for regression coverage, mirroring the note added by `search-term-relevance-filter` for off-term rows
+- [ ] 7.1 Add `JSONSearchParser`/base-class unit tests exercising, for both `expected_product_line` and `expected_category` independently: match (included), mismatch (excluded), blank (pass-through), case-insensitivity, incidental whitespace, and a value containing regex metacharacters matched literally
+- [ ] 7.2 Add a unit test exercising both fields set simultaneously: pass-both (included), pass-one-fail-other (excluded)
+- [ ] 7.3 Extend `tracking/tests/test_wtfilters_parser.py` using the fixtures from 6.1 and 6.4, asserting off-product-line and off-category rows are excluded while matching rows are retained
+- [ ] 7.4 Extend the `ShopifyParser` fixture tests (`tracking/tests/test_parsers.py`) using the fixture from 6.2
+- [ ] 7.5 Extend the `StorepassParser` fixture tests (`tracking/tests/test_parsers.py`) using the fixture from 6.3
+- [ ] 7.6 Add/extend a `SearchableItem` model or form test confirming both new fields default to blank and round-trip correctly, independently of each other
+- [ ] 7.7 Add a test confirming `SearchResult.product_line` is populated and exported/displayed correctly
+- [ ] 7.8 Add a test confirming `ObservedCategoryValue` is upserted (created, then `last_seen` updated on repeat) for an **accepted** row's category and product-line signals
+- [ ] 7.9 Add a test confirming `ObservedCategoryValue` is still upserted for a row **rejected** by the term-relevance, `expected_product_line`, or `expected_category` check — the key behavior this design closes the gap on
+- [ ] 7.10 Add a test for the value-discovery query helper: scoping to an item's configured vendors only, sourced from `ObservedCategoryValue` (not `SearchResult`), and empty-list behavior when no observations exist
+- [ ] 7.11 Add a test for the `category` backfill data migration (2.6): distinct historical `SearchResult.category` values, grouped by `source`, land correctly in `ObservedCategoryValue`
+- [ ] 7.12 Run the full `tracking` test suite and confirm no existing assertions (result counts, fixture-derived rows, category display values) regress
+
+## 8. Documentation
+
+- [ ] 8.1 Update `tracking/docs/wt_investigation.md`, `f2f_investigation.md`, and `hfx_investigation.md` to note which raw field now feeds `expected_product_line` vs. `expected_category`
+- [ ] 8.2 Add an explicit callout in `tracking/docs/hfx_investigation.md` distinguishing the existing `product_line` Storepass **query parameter** (request-side, per-`ItemSource`) from this change's `product_line` **field/column** (response-side filtering) — same vocabulary, different layer, per `design.md` Decision 6
+- [ ] 8.3 Add a short note to each vendor's fixture `README.md` that future fixture refreshes should ideally include at least one off-product-line row and one off-category row for regression coverage, mirroring the note added by `search-term-relevance-filter` for off-term rows
