@@ -6,6 +6,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _normalize_for_match(value):
+    """Lowercase and collapse whitespace, for term/title comparison."""
+    return re.sub(r"\s+", " ", str(value).strip().lower())
+
+
 class JSONSearchParser:
     """Base class for JSON API search parsers. Subclasses implement parse_data()."""
     data_keys = ["category", "title", "price", "instock"]
@@ -44,6 +49,13 @@ class JSONSearchParser:
         raise NotImplementedError
 
     def add_result(self, title, price, instock, category=""):
+        term_normalized = _normalize_for_match(self.term)
+        if term_normalized and term_normalized not in _normalize_for_match(title):
+            logger.debug(
+                "Dropping off-term result: title=%r does not contain term=%r",
+                title, self.term,
+            )
+            return
         self.results.append({
             "title": str(title),
             "price": float(price),
