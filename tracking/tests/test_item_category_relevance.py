@@ -9,6 +9,7 @@ category backfill data migration.
 """
 
 import json
+import re
 from importlib import import_module
 
 from django.test import TestCase
@@ -29,48 +30,126 @@ from tracking.tests.factories import (
 
 
 class SearchableItemExpectedFieldsTests(TestCase):
-    def test_fields_blank_by_default(self):
+    def test_fields_empty_list_by_default(self):
         item = make_item()
-        self.assertEqual(item.expected_product_line, "")
-        self.assertEqual(item.expected_category, "")
+        self.assertEqual(item.expected_product_line, [])
+        self.assertEqual(item.expected_category, [])
 
     def test_fields_round_trip_independently(self):
         item = make_item()
-        item.expected_product_line = "Magic"
+        item.expected_product_line = ["Magic", "MTG"]
         item.save()
         item.refresh_from_db()
-        self.assertEqual(item.expected_product_line, "Magic")
-        self.assertEqual(item.expected_category, "")
+        self.assertEqual(item.expected_product_line, ["Magic", "MTG"])
+        self.assertEqual(item.expected_category, [])
 
-        item.expected_category = "Strixhaven"
+        item.expected_category = ["Strixhaven"]
         item.save()
         item.refresh_from_db()
-        self.assertEqual(item.expected_product_line, "Magic")
-        self.assertEqual(item.expected_category, "Strixhaven")
+        self.assertEqual(item.expected_product_line, ["Magic", "MTG"])
+        self.assertEqual(item.expected_category, ["Strixhaven"])
 
 
 class SearchableItemFormExpectedFieldsTests(AuthedClientTestCase):
-    def test_form_includes_both_fields(self):
+    def test_form_includes_suggestion_and_manual_fields(self):
         form = SearchableItemForm()
-        self.assertIn("expected_product_line", form.fields)
-        self.assertIn("expected_category", form.fields)
+        self.assertIn("expected_product_line_suggestions", form.fields)
+        self.assertIn("expected_product_line_manual", form.fields)
+        self.assertIn("expected_category_suggestions", form.fields)
+        self.assertIn("expected_category_manual", form.fields)
 
-    def test_edit_view_round_trips_expected_values(self):
+    def test_edit_view_stores_manually_entered_values(self):
         item = make_item()
         response = self.client.post(
             reverse("edit_term", args=[item.pk]),
             {
                 "text": item.text,
                 "priority": item.priority,
-                "expected_product_line": "Magic",
-                "expected_category": "Strixhaven",
+                "expected_product_line_suggestions": [],
+                "expected_product_line_manual": "Magic",
+                "expected_category_suggestions": [],
+                "expected_category_manual": "Strixhaven",
                 "tags": [],
             },
         )
         self.assertEqual(response.status_code, 302)
         item.refresh_from_db()
-        self.assertEqual(item.expected_product_line, "Magic")
-        self.assertEqual(item.expected_category, "Strixhaven")
+        self.assertEqual(item.expected_product_line, ["Magic"])
+        self.assertEqual(item.expected_category, ["Strixhaven"])
+
+    def test_checking_suggestions_from_two_vendors_dedupes_to_one_stored_value(self):
+        """item-category-relevance-filter — task 7.12 (merge/dedupe on save)."""
+        wt = make_source(key="testwt-dedupe", parser_key="wtfilters")
+        f2f = make_source(key="testf2f-dedupe", parser_key="shopify")
+        item = make_item()
+        make_item_source(item, wt)
+        make_item_source(item, f2f)
+        now = timezone.now()
+        ObservedCategoryValue.objects.create(
+            source=wt, field_name="product_line", value="Magic: The Gathering", last_seen=now
+        )
+        ObservedCategoryValue.objects.create(
+            source=f2f, field_name="product_line", value="Magic: The Gathering", last_seen=now
+        )
+
+        response = self.client.post(
+            reverse("edit_term", args=[item.pk]),
+            {
+                "text": item.text,
+                "priority": item.priority,
+                "expected_product_line_suggestions": [
+                    "Magic: The Gathering", "Magic: The Gathering",
+                ],
+                "expected_product_line_manual": "MTG",
+                "expected_category_suggestions": [],
+                "expected_category_manual": "",
+                "tags": [],
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        item.refresh_from_db()
+        self.assertEqual(item.expected_product_line, ["Magic: The Gathering", "MTG"])
+
+    def test_stored_value_from_multiple_vendors_prechecks_all_matching_checkboxes(self):
+        """item-category-relevance-filter — task 7.13 (edit-time pre-population,
+        multi-vendor half)."""
+        wt = make_source(key="testwt-precheck", parser_key="wtfilters")
+        f2f = make_source(key="testf2f-precheck", parser_key="shopify")
+        item = make_item()
+        make_item_source(item, wt)
+        make_item_source(item, f2f)
+        item.expected_product_line = ["Magic: The Gathering"]
+        item.save()
+        now = timezone.now()
+        ObservedCategoryValue.objects.create(
+            source=wt, field_name="product_line", value="Magic: The Gathering", last_seen=now
+        )
+        ObservedCategoryValue.objects.create(
+            source=f2f, field_name="product_line", value="Magic: The Gathering", last_seen=now
+        )
+
+        response = self.client.get(reverse("edit_term", args=[item.pk]))
+        body = response.content.decode()
+        checkboxes = re.findall(
+            r'<input[^>]*name="expected_product_line_suggestions"[^>]*>', body
+        )
+        self.assertEqual(len(checkboxes), 2)
+        self.assertTrue(all("checked" in cb for cb in checkboxes))
+
+    def test_stored_value_with_no_matching_suggestion_appears_in_manual_field(self):
+        """item-category-relevance-filter — task 7.13 (edit-time pre-population,
+        manual-fallback half)."""
+        wt = make_source(key="testwt-fallback", parser_key="wtfilters")
+        item = make_item()
+        make_item_source(item, wt)
+        item.expected_product_line = ["Some Stale Value"]
+        item.save()
+
+        form = SearchableItemForm(instance=item)
+        self.assertEqual(
+            form.initial["expected_product_line_manual"], "Some Stale Value"
+        )
+        self.assertEqual(form.initial["expected_product_line_suggestions"], [])
 
 
 class SearchResultProductLineTests(AuthedClientTestCase):
@@ -159,7 +238,7 @@ class ObservedCategoryValueUpsertTests(TestCase):
     def test_rejected_row_is_still_recorded(self):
         parser = WtFiltersParser(
             term="Lightning Bolt",
-            expected_product_line="Magic",
+            expected_product_line=["Magic"],
             source=self.source,
         )
         parser.parse_response(_json_response({

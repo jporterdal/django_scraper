@@ -132,7 +132,7 @@ class WtFiltersParserProductLineCategoryTests(SimpleTestCase):
         return parser
 
     def test_off_product_line_row_is_excluded(self):
-        parser = self._parse(expected_product_line="Magic")
+        parser = self._parse(expected_product_line=["Magic"])
         titles_and_lines = [(r["title"], r["product_line"]) for r in parser.results]
         self.assertTrue(
             all("Disney Lorcana" not in pl for _, pl in titles_and_lines)
@@ -140,13 +140,13 @@ class WtFiltersParserProductLineCategoryTests(SimpleTestCase):
         self.assertEqual(len(parser.results), 2)
 
     def test_off_category_row_is_excluded_independent_of_product_line(self):
-        parser = self._parse(expected_category="Strixhaven")
+        parser = self._parse(expected_category=["Strixhaven"])
         self.assertEqual(len(parser.results), 1)
         self.assertEqual(parser.results[0]["category"], "Strixhaven - Mystical Archive")
 
     def test_matching_rows_are_retained(self):
         parser = self._parse(
-            expected_product_line="Magic", expected_category="Strixhaven"
+            expected_product_line=["Magic"], expected_category=["Strixhaven"]
         )
         self.assertEqual(len(parser.results), 1)
         self.assertEqual(parser.results[0]["product_line"], "Magic the Gathering Singles")

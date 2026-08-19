@@ -182,25 +182,26 @@ class SearchableItem(models.Model):
         verbose_name="Tags for grouping and filtering items",
     )
 
-    expected_product_line = models.CharField(
-        max_length=125,
+    expected_product_line = models.JSONField(
+        default=list,
         blank=True,
-        default="",
         verbose_name=(
-            "Expected product line (e.g. 'Magic', 'Pokemon') a result must "
-            "contain to disambiguate this item from a same-titled item in an "
-            "unrelated product line. Blank disables this check."
+            "Expected product line(s) (e.g. ['Magic'], or ['Magic', 'MTG'] when "
+            "vendors word it differently) — a result must contain at least one "
+            "listed value to disambiguate this item from a same-titled item in "
+            "an unrelated product line. Empty list disables this check."
         ),
     )
 
-    expected_category = models.CharField(
-        max_length=125,
+    expected_category = models.JSONField(
+        default=list,
         blank=True,
-        default="",
         verbose_name=(
-            "Expected category/set (e.g. a specific MTG set) a result must "
-            "contain to narrow results beyond product-line disambiguation. "
-            "Independent of expected product line; blank disables this check."
+            "Expected category/set value(s) (e.g. a specific MTG set, possibly "
+            "spelled differently per vendor) — a result must contain at least "
+            "one listed value to narrow results beyond product-line "
+            "disambiguation. Independent of expected product line; empty list "
+            "disables this check."
         ),
     )
 

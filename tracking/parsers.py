@@ -36,10 +36,10 @@ class JSONSearchParser:
     """Base class for JSON API search parsers. Subclasses implement parse_data()."""
     data_keys = ["category", "title", "price", "instock"]
 
-    def __init__(self, term="", expected_product_line="", expected_category="", source=None):
+    def __init__(self, term="", expected_product_line=None, expected_category=None, source=None):
         self.term = term
-        self.expected_product_line = expected_product_line
-        self.expected_category = expected_category
+        self.expected_product_line = list(expected_product_line or [])
+        self.expected_category = list(expected_category or [])
         self.source = source
         self.url = None
         self.results = []
@@ -100,8 +100,9 @@ class JSONSearchParser:
             )
             return
 
-        if self.expected_product_line and not _normalized_substring_match(
-            self.expected_product_line, product_line
+        if self.expected_product_line and not any(
+            _normalized_substring_match(value, product_line)
+            for value in self.expected_product_line
         ):
             logger.debug(
                 "Dropping off-product-line result: title=%r product_line=%r expected_product_line=%r",
@@ -109,8 +110,9 @@ class JSONSearchParser:
             )
             return
 
-        if self.expected_category and not _normalized_substring_match(
-            self.expected_category, category
+        if self.expected_category and not any(
+            _normalized_substring_match(value, category)
+            for value in self.expected_category
         ):
             logger.debug(
                 "Dropping off-category result: title=%r category=%r expected_category=%r",
