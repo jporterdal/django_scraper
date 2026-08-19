@@ -107,6 +107,9 @@ Because results come from JSON (Elasticsearch-style hits), use JSON paths rather
 | `_source.title` | Full listing title, e.g. `Lightning Bolt [146] [Magic 2010] [Foil]` |
 | `_source.General_Card_Name` | Shorter card name, e.g. `Lightning Bolt` — prefer for display matching |
 | `_source.MTG_Set_Name` | Set name metafield |
+| `_source.General_Game_Type` (or `_source["Game Type"]`) | Array, e.g. `["Magic: The Gathering"]` — broad game/product-line signal |
+
+**item-category-relevance-filter:** `General_Game_Type`/`Game Type` (broad, e.g. `Magic: The Gathering`) feeds this app's `expected_product_line` check and the `product_line` column. `MTG_Set_Name`/`Set` (narrow, set-level) is what this app's own `category` field/column and `expected_category` check use, unchanged from before this capability. See `design.md` Decision 6/7 under `openspec/changes/item-category-relevance-filter/` for the full rationale.
 
 ### Price (CAD)
 

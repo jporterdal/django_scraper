@@ -91,6 +91,7 @@
                             <th>Title</th>
                             <th>Price ($)</th>
                             <th>In stock</th>
+                            <th>Product line</th>
                             <th>Category</th>
                         </tr>
                     </thead>
@@ -109,11 +110,12 @@
                                     <span class="badge text-bg-secondary">no</span>
                                 {% endif %}
                             </td>
+                            <td>{{ result.product_line|default:"—" }}</td>
                             <td>{{ result.category|default:"—" }}</td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="7" class="text-muted">No results recorded for this item yet.</td>
+                            <td colspan="8" class="text-muted">No results recorded for this item yet.</td>
                         </tr>
                         {% endfor %}
                     </tbody>

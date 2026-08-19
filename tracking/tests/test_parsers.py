@@ -74,7 +74,7 @@ class ParserContractTests(SimpleTestCase):
 
         self.assertEqual(len(parser.results), 1)
         row = parser.results[0]
-        self.assertEqual(set(row.keys()), {"title", "price", "category", "instock"})
+        self.assertEqual(set(row.keys()), {"title", "price", "category", "product_line", "instock"})
         self.assertIsInstance(row["price"], float)
 
     def test_add_result_coerces_types(self):
@@ -85,7 +85,7 @@ class ParserContractTests(SimpleTestCase):
 
         self.assertEqual(
             parser.results[0],
-            {"title": "1", "price": 3.5, "instock": 1, "category": ""},
+            {"title": "1", "price": 3.5, "instock": 1, "category": "", "product_line": ""},
         )
 
     def test_cc_parser_has_parse_response(self):
@@ -159,6 +159,135 @@ class JSONSearchParserRelevanceTests(SimpleTestCase):
         parser.add_result(title="Anything At All", price=1, instock=True)
 
         self.assertEqual(len(parser.results), 1)
+
+
+class JSONSearchParserProductLineCategoryTests(SimpleTestCase):
+    """item-category-relevance-filter — expected_product_line/expected_category
+    checks on JSONSearchParser.add_result, independent of term-relevance."""
+
+    def test_product_line_match_is_included(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(expected_product_line="Magic")
+        parser.add_result(
+            title="Energy Retrieval", price=1, instock=True,
+            product_line="Magic the Gathering Singles",
+        )
+        self.assertEqual(len(parser.results), 1)
+
+    def test_product_line_mismatch_is_excluded(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(expected_product_line="Magic")
+        parser.add_result(
+            title="Energy Retrieval", price=1, instock=True,
+            product_line="Pokémon Trading Card Game",
+        )
+        self.assertEqual(parser.results, [])
+
+    def test_blank_expected_product_line_disables_the_check(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(expected_product_line="")
+        parser.add_result(
+            title="Energy Retrieval", price=1, instock=True,
+            product_line="Pokémon Trading Card Game",
+        )
+        self.assertEqual(len(parser.results), 1)
+
+    def test_product_line_matching_is_case_insensitive_and_whitespace_tolerant(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(expected_product_line=" magic ")
+        parser.add_result(
+            title="Lightning Bolt", price=1, instock=True,
+            product_line="MAGIC: THE GATHERING",
+        )
+        self.assertEqual(len(parser.results), 1)
+
+    def test_product_line_with_regex_metacharacters_matches_literally(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(expected_product_line="Magic (Core Set)")
+        parser.add_result(
+            title="Lightning Bolt", price=1, instock=True,
+            product_line="Magic (Core Set) Singles",
+        )
+        self.assertEqual(len(parser.results), 1)
+
+    def test_category_match_is_included(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(expected_category="Strixhaven")
+        parser.add_result(
+            title="Lightning Bolt", price=1, instock=True,
+            category="Strixhaven - Mystical Archive",
+        )
+        self.assertEqual(len(parser.results), 1)
+
+    def test_category_mismatch_is_excluded(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(expected_category="Strixhaven")
+        parser.add_result(
+            title="Lightning Bolt", price=1, instock=True, category="Kaldheim",
+        )
+        self.assertEqual(parser.results, [])
+
+    def test_blank_expected_category_disables_the_check(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(expected_category="")
+        parser.add_result(
+            title="Lightning Bolt", price=1, instock=True, category="Kaldheim",
+        )
+        self.assertEqual(len(parser.results), 1)
+
+    def test_category_matching_is_case_insensitive_and_whitespace_tolerant(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(expected_category=" strixhaven ")
+        parser.add_result(
+            title="Lightning Bolt", price=1, instock=True,
+            category="STRIXHAVEN - MYSTICAL ARCHIVE",
+        )
+        self.assertEqual(len(parser.results), 1)
+
+    def test_category_with_regex_metacharacters_matches_literally(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(expected_category="30th Anniversary (Retro)")
+        parser.add_result(
+            title="Lightning Bolt", price=1, instock=True,
+            category="30th Anniversary (Retro) Frame",
+        )
+        self.assertEqual(len(parser.results), 1)
+
+    def test_both_fields_set_pass_both_is_included(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(
+            expected_product_line="Magic", expected_category="Strixhaven",
+        )
+        parser.add_result(
+            title="Lightning Bolt", price=1, instock=True,
+            product_line="Magic the Gathering Singles",
+            category="Strixhaven - Mystical Archive",
+        )
+        self.assertEqual(len(parser.results), 1)
+
+    def test_both_fields_set_pass_one_fail_other_is_excluded(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(
+            expected_product_line="Magic", expected_category="Strixhaven",
+        )
+        parser.add_result(
+            title="Lightning Bolt", price=1, instock=True,
+            product_line="Magic the Gathering Singles",
+            category="Kaldheim",
+        )
+        self.assertEqual(parser.results, [])
 
 
 class ShopifyParserFixtureTests(SimpleTestCase):
@@ -250,6 +379,43 @@ class ShopifyParserRelevanceTests(SimpleTestCase):
         self.assertTrue(parser.results[0]["title"].startswith("Fire Dragon"))
 
 
+class ShopifyParserProductLineCategoryTests(SimpleTestCase):
+    """item-category-relevance-filter — real f2f-shaped payload with a
+    same-titled off-product-line row and a same-product-line off-category row."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        fixtures = settings.BASE_DIR / "tracking" / "fixtures" / "html" / "f2f"
+        cls.data = json.loads(
+            (fixtures / "search_results_product_line_mismatch.json").read_text()
+        )
+
+    def _parse(self, **kwargs):
+        from tracking.parsers import ShopifyParser
+
+        parser = ShopifyParser(term="Lightning Bolt", **kwargs)
+        parser.parse_data(self.data)
+        return parser
+
+    def test_off_product_line_row_is_excluded(self):
+        parser = self._parse(expected_product_line="Magic")
+        self.assertEqual(len(parser.results), 2)
+        self.assertTrue(all("Lorcana" not in r["product_line"] for r in parser.results))
+
+    def test_off_category_row_is_excluded_independent_of_product_line(self):
+        parser = self._parse(expected_category="Strixhaven")
+        self.assertEqual(len(parser.results), 1)
+        self.assertEqual(parser.results[0]["category"], "Strixhaven: Mystical Archive")
+
+    def test_matching_rows_are_retained(self):
+        parser = self._parse(
+            expected_product_line="Magic", expected_category="Strixhaven"
+        )
+        self.assertEqual(len(parser.results), 1)
+        self.assertIn("Magic", parser.results[0]["product_line"])
+
+
 class StorepassParserFixtureTests(SimpleTestCase):
     """Phase 2 Step 4 — StorepassParser (HFX Storepass) against the real fixture."""
 
@@ -324,3 +490,40 @@ class StorepassParserRelevanceTests(SimpleTestCase):
 
         self.assertEqual(len(parser.results), 1)
         self.assertTrue(parser.results[0]["title"].startswith("Fire Dragon"))
+
+
+class StorepassParserProductLineCategoryTests(SimpleTestCase):
+    """item-category-relevance-filter — real hfx-shaped payload with a
+    same-titled off-product-line row and a same-product-line off-category row."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        fixtures = settings.BASE_DIR / "tracking" / "fixtures" / "html" / "hfx"
+        cls.data = json.loads(
+            (fixtures / "search_results_product_line_mismatch.json").read_text()
+        )
+
+    def _parse(self, **kwargs):
+        from tracking.parsers import StorepassParser
+
+        parser = StorepassParser(term="Lightning Bolt", **kwargs)
+        parser.parse_data(self.data)
+        return parser
+
+    def test_off_product_line_row_is_excluded(self):
+        parser = self._parse(expected_product_line="Magic")
+        self.assertEqual(len(parser.results), 2)
+        self.assertTrue(all("Lorcana" not in r["product_line"] for r in parser.results))
+
+    def test_off_category_row_is_excluded_independent_of_product_line(self):
+        parser = self._parse(expected_category="Strixhaven")
+        self.assertEqual(len(parser.results), 1)
+        self.assertEqual(parser.results[0]["category"], "Strixhaven: Mystical Archive")
+
+    def test_matching_rows_are_retained(self):
+        parser = self._parse(
+            expected_product_line="Magic", expected_category="Strixhaven"
+        )
+        self.assertEqual(len(parser.results), 1)
+        self.assertIn("Magic", parser.results[0]["product_line"])

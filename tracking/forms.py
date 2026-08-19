@@ -5,7 +5,14 @@ from django.db import transaction
 from django.db.models.functions import Lower
 from django.forms import BaseFormSet, formset_factory
 
-from .models import ItemSource, SearchableItem, Source, Tag, UpdateSchedule
+from .models import (
+    ItemSource,
+    SearchableItem,
+    Source,
+    Tag,
+    UpdateSchedule,
+    observed_values_for_item,
+)
 from .parsers import sources as parser_registry
 from .ratelimit import PROFILE_CHOICES as rate_limit_profile_choices
 
@@ -61,6 +68,18 @@ EXCLUDE_HELP_TEXT = (
     "Examples — exclude: Foil · Japanese · \\bJP\\b · \\bTi\\b · Refurb"
 )
 
+EXPECTED_PRODUCT_LINE_HELP_TEXT = (
+    "Plain text (e.g. 'Magic', 'Pokemon'). A result must contain this text to "
+    "count as a match, disambiguating this item from a same-titled item in an "
+    "unrelated product line. Leave blank to skip this check."
+)
+
+EXPECTED_CATEGORY_HELP_TEXT = (
+    "Plain text (e.g. a specific set name). A result must contain this text to "
+    "count as a match, narrowing results beyond product-line disambiguation. "
+    "Independent of expected product line. Leave blank to skip this check."
+)
+
 PINNED_URL_HELP_TEXT = (
     "When set, the scraper fetches this URL directly with GET instead of building "
     "a search URL from the source template. Use for stubborn listings where search "
@@ -81,6 +100,17 @@ def _list_to_lines(value):
     return value or ""
 
 
+def _distinct_ordered_values(source_value_pairs):
+    """Dedupe ``(source_key, value)`` pairs to an ordered list of distinct values."""
+    seen = set()
+    values = []
+    for _, value in source_value_pairs:
+        if value not in seen:
+            seen.add(value)
+            values.append(value)
+    return values
+
+
 def _apply_bootstrap_form_classes(form):
     """Add Bootstrap widget classes to every field on a form."""
     for field in form.fields.values():
@@ -96,22 +126,57 @@ def _apply_bootstrap_form_classes(form):
 
 
 class SearchableItemForm(forms.ModelForm):
-    """Form for editing a SearchableItem (search term, priority, active, tags)."""
+    """Form for editing a SearchableItem (search term, priority, active, tags).
+
+    ``expected_product_line``/``expected_category`` get vendor-scoped value
+    suggestions (an HTML datalist, wired up by the template) sourced from
+    ``ObservedCategoryValue`` for the item's own configured sources — see
+    ``observed_values_for_item``. Non-binding: any plain-text value stays
+    acceptable regardless of whether it's suggested.
+    """
 
     class Meta:
         model = SearchableItem
-        fields = ["text", "priority", "active", "tags"]
+        fields = [
+            "text",
+            "priority",
+            "active",
+            "tags",
+            "expected_product_line",
+            "expected_category",
+        ]
+        help_texts = {
+            "expected_product_line": EXPECTED_PRODUCT_LINE_HELP_TEXT,
+            "expected_category": EXPECTED_CATEGORY_HELP_TEXT,
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         _apply_bootstrap_form_classes(self)
 
+        instance = getattr(self, "instance", None)
+        if instance is not None and instance.pk:
+            product_line_values = observed_values_for_item(instance, "product_line")
+            category_values = observed_values_for_item(instance, "category")
+        else:
+            product_line_values = []
+            category_values = []
+        self.product_line_suggestions = _distinct_ordered_values(product_line_values)
+        self.category_suggestions = _distinct_ordered_values(category_values)
+
+        self.fields["expected_product_line"].widget.attrs["list"] = (
+            "expected_product_line_suggestions"
+        )
+        self.fields["expected_category"].widget.attrs["list"] = (
+            "expected_category_suggestions"
+        )
+
 
 class SearchableItemCreateForm(SearchableItemForm):
-    """Create view: search text only."""
+    """Create view: search text plus the optional expected product-line/category."""
 
     class Meta(SearchableItemForm.Meta):
-        fields = ["text"]
+        fields = ["text", "expected_product_line", "expected_category"]
 
 
 class ItemSourceForm(forms.ModelForm):

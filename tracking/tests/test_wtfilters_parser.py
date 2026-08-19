@@ -45,7 +45,7 @@ class WtFiltersParserTests(SimpleTestCase):
     def test_result_contract_shape(self):
         parser = self._parse()
         for row in parser.results:
-            self.assertEqual(set(row.keys()), {"title", "price", "instock", "category"})
+            self.assertEqual(set(row.keys()), {"title", "price", "instock", "category", "product_line"})
             self.assertIsInstance(row["title"], str)
             self.assertIsInstance(row["price"], float)
             self.assertIsInstance(row["category"], str)
@@ -106,3 +106,48 @@ class WtFiltersParserRelevanceTests(SimpleTestCase):
         parser = self._parse()
         titles = [row["title"] for row in parser.results]
         self.assertFalse(any("Dragon Fire" in title for title in titles))
+
+
+class WtFiltersParserProductLineCategoryTests(SimpleTestCase):
+    """item-category-relevance-filter — a same-titled row from an unrelated
+    product line, and a same-product-line row from an unrelated set, both in
+    a real wt-shaped payload."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        fixture_path = (
+            settings.BASE_DIR
+            / "tracking"
+            / "fixtures"
+            / "html"
+            / "wt"
+            / "search_results_product_line_mismatch.json"
+        )
+        cls.fixture = json.loads(fixture_path.read_text())
+
+    def _parse(self, **kwargs):
+        parser = WtFiltersParser(term="Lightning Bolt", **kwargs)
+        parser.parse_response(_json_response(self.fixture))
+        return parser
+
+    def test_off_product_line_row_is_excluded(self):
+        parser = self._parse(expected_product_line="Magic")
+        titles_and_lines = [(r["title"], r["product_line"]) for r in parser.results]
+        self.assertTrue(
+            all("Disney Lorcana" not in pl for _, pl in titles_and_lines)
+        )
+        self.assertEqual(len(parser.results), 2)
+
+    def test_off_category_row_is_excluded_independent_of_product_line(self):
+        parser = self._parse(expected_category="Strixhaven")
+        self.assertEqual(len(parser.results), 1)
+        self.assertEqual(parser.results[0]["category"], "Strixhaven - Mystical Archive")
+
+    def test_matching_rows_are_retained(self):
+        parser = self._parse(
+            expected_product_line="Magic", expected_category="Strixhaven"
+        )
+        self.assertEqual(len(parser.results), 1)
+        self.assertEqual(parser.results[0]["product_line"], "Magic the Gathering Singles")
+        self.assertEqual(parser.results[0]["category"], "Strixhaven - Mystical Archive")

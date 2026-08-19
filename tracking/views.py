@@ -990,6 +990,7 @@ EXPORT_FIELDNAMES = [
     "price",
     "instock",
     "category",
+    "product_line",
     "timestamp",
 ]
 
@@ -1016,6 +1017,7 @@ def _item_export_rows(item):
             "price": r.price,
             "instock": r.instock,
             "category": r.category or "",
+            "product_line": r.product_line or "",
             "timestamp": timezone.localtime(ts).isoformat() if ts else "",
         })
     return rows

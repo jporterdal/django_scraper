@@ -1,0 +1,28 @@
+{
+  "products": [
+    {
+      "display_name": "Lightning Bolt",
+      "vendor": "Magic: The Gathering",
+      "productLineData": {"set": "Strixhaven: Mystical Archive"},
+      "variantInfo": [
+        {"price": 30.99, "inventory_quantity": 4, "title": "Near Mint"}
+      ]
+    },
+    {
+      "display_name": "Lightning Bolt",
+      "vendor": "Disney Lorcana",
+      "productLineData": {"set": "Into the Inklands"},
+      "variantInfo": [
+        {"price": 2.5, "inventory_quantity": 3, "title": "Near Mint"}
+      ]
+    },
+    {
+      "display_name": "Lightning Bolt",
+      "vendor": "Magic: The Gathering",
+      "productLineData": {"set": "Masters 25"},
+      "variantInfo": [
+        {"price": 2.0, "inventory_quantity": 2, "title": "Near Mint"}
+      ]
+    }
+  ]
+}

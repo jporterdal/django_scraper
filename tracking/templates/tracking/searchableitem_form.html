@@ -28,4 +28,19 @@
             </form>
         </div>
     </div>
+
+    {% if form.product_line_suggestions %}
+    <datalist id="expected_product_line_suggestions">
+        {% for value in form.product_line_suggestions %}
+        <option value="{{ value }}"></option>
+        {% endfor %}
+    </datalist>
+    {% endif %}
+    {% if form.category_suggestions %}
+    <datalist id="expected_category_suggestions">
+        {% for value in form.category_suggestions %}
+        <option value="{{ value }}"></option>
+        {% endfor %}
+    </datalist>
+    {% endif %}
 {% endblock %}
