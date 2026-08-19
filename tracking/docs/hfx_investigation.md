@@ -92,7 +92,7 @@ No cookies or auth required (verified 2026-07-07).
 |-----------|-------|
 | `products[].display_name` | e.g. `Lightning Bolt [Beatdown]` — preferred for display |
 | `products[].name` | e.g. `Lightning Bolt Beatdown` |
-| `products[].vendor` | e.g. `Magic: The Gathering` |
+| `products[].vendor` | e.g. `Magic: The Gathering` — broad game/product-line signal |
 
 ### Price (CAD)
 
@@ -119,6 +119,10 @@ No cookies or auth required (verified 2026-07-07).
 | `products[].variantInfo[].title` | `Near Mint`, `Lightly Played`, etc. |
 | `products[].variantInfo[].sku` | e.g. `BTD-41-EN-NF-1` |
 | `products[].productLineData` | MTG metadata (set, rarity, etc.) when present |
+
+**item-category-relevance-filter:** `products[].vendor` (broad, e.g. `Magic: The Gathering`) feeds this app's `expected_product_line` check and the `product_line` column. `productLineData.set` (narrow, set-level) is what this app's own `category` field/column and `expected_category` check use, unchanged from before this capability.
+
+**Naming collision — two different `product_line` concepts, same name, different layer.** This document's §1 already uses the literal string `product_line` as a **Storepass API query parameter** (e.g. `&product_line=Magic: the Gathering` baked into `base_search_url`/`url_suffix`, line 28/34/42 above) — a *request-side*, per-`ItemSource` concern that scopes which vendor product line the search itself queries against. The `item-category-relevance-filter` capability's `product_line` is a **different layer entirely**: a *response-side* filtering concern — an item-level `SearchableItem.expected_product_line` value checked against the `products[].vendor` signal in the *parsed response*, with the matched value persisted to `SearchResult.product_line`. The two are unrelated in code (one is a URL-building input on `Source`/`ItemSource`, the other is a filtering/persistence concern on `SearchableItem`/`SearchResult`/`JSONSearchParser`) and can disagree without either being wrong — e.g. the request-side parameter could scope a search to `Magic: the Gathering` while an item's `expected_product_line` independently narrows further, or targets a different vendor entirely for a multi-vendor `ItemSource` setup. See `design.md` Decision 6 under `openspec/changes/item-category-relevance-filter/` for the full rationale.
 
 ### HTML DOM (reference only — JS-rendered)
 

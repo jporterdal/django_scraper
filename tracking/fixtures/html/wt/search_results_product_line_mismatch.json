@@ -1,0 +1,27 @@
+{
+  "data": {
+    "results": [
+      {
+        "title": "Lightning Bolt (042) (STA) - Foil",
+        "price": 10,
+        "in_stock": true,
+        "category": "Magic the Gathering Singles",
+        "subcategory": "Strixhaven - Mystical Archive"
+      },
+      {
+        "title": "Lightning Bolt",
+        "price": 2.5,
+        "in_stock": true,
+        "category": "Disney Lorcana Singles",
+        "subcategory": "Into the Inklands"
+      },
+      {
+        "title": "Lightning Bolt (Masters 25)",
+        "price": 2,
+        "in_stock": true,
+        "category": "Magic the Gathering Singles",
+        "subcategory": "Masters 25"
+      }
+    ]
+  }
+}

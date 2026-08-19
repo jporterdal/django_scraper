@@ -5,7 +5,14 @@ from django.db import transaction
 from django.db.models.functions import Lower
 from django.forms import BaseFormSet, formset_factory
 
-from .models import ItemSource, SearchableItem, Source, Tag, UpdateSchedule
+from .models import (
+    ItemSource,
+    SearchableItem,
+    Source,
+    Tag,
+    UpdateSchedule,
+    observed_values_for_item,
+)
 from .parsers import sources as parser_registry
 from .ratelimit import PROFILE_CHOICES as rate_limit_profile_choices
 
@@ -61,6 +68,30 @@ EXCLUDE_HELP_TEXT = (
     "Examples — exclude: Foil · Japanese · \\bJP\\b · \\bTi\\b · Refurb"
 )
 
+EXPECTED_PRODUCT_LINE_HELP_TEXT = (
+    "Check any suggestions that apply, e.g. 'Magic', 'Pokemon'. A result "
+    "matching at least one checked or entered value counts as a match, "
+    "disambiguating this item from a same-titled item in an unrelated "
+    "product line. Leave everything unchecked/empty to skip this check."
+)
+
+EXPECTED_PRODUCT_LINE_MANUAL_HELP_TEXT = (
+    "One value per line, for anything not covered by a suggestion above "
+    "(e.g. a different vendor's own wording for the same product line)."
+)
+
+EXPECTED_CATEGORY_HELP_TEXT = (
+    "Check any suggestions that apply, e.g. a specific set name. A result "
+    "matching at least one checked or entered value counts as a match, "
+    "narrowing results beyond product-line disambiguation. Independent of "
+    "expected product line. Leave everything unchecked/empty to skip this "
+    "check."
+)
+
+EXPECTED_CATEGORY_MANUAL_HELP_TEXT = (
+    "One value per line, for anything not covered by a suggestion above."
+)
+
 PINNED_URL_HELP_TEXT = (
     "When set, the scraper fetches this URL directly with GET instead of building "
     "a search URL from the source template. Use for stubborn listings where search "
@@ -82,9 +113,19 @@ def _list_to_lines(value):
 
 
 def _apply_bootstrap_form_classes(form):
-    """Add Bootstrap widget classes to every field on a form."""
+    """Add Bootstrap widget classes to every field on a form.
+
+    ``CheckboxSelectMultiple``/``RadioSelect`` are skipped: Django applies a
+    widget's ``attrs["class"]`` to both the outer options container *and*
+    each individual `<input>`, so forcing "form-check-input" here would also
+    land on the container div and shrink it to Bootstrap's 1em checkbox
+    dimensions. Left unstyled; their containing markup supplies structure
+    instead (see ``searchableitem_form.html``'s scrollable wrapper).
+    """
     for field in form.fields.values():
         widget = field.widget
+        if isinstance(widget, (forms.CheckboxSelectMultiple, forms.RadioSelect)):
+            continue
         if isinstance(widget, forms.CheckboxInput):
             css = "form-check-input"
         elif isinstance(widget, (forms.Select, forms.SelectMultiple)):
@@ -95,8 +136,87 @@ def _apply_bootstrap_form_classes(form):
         widget.attrs["class"] = (existing + " " + css).strip()
 
 
+def _suggestion_choices(instance, field_name):
+    """One (value, "value (source_key)") choice per observed (source, value) pair.
+
+    Not deduplicated across sources — a value shared by two vendors renders as
+    two distinct choices so the checkbox UI can show, and independently
+    pre-check, which vendor(s) a stored value came from. Grouped by vendor,
+    alphabetically within each group.
+    """
+    if instance is None or not instance.pk:
+        return []
+    pairs = observed_values_for_item(instance, field_name)
+    ordered = sorted(pairs, key=lambda pair: (pair[0].lower(), pair[1].lower()))
+    return [
+        (value, f"{value} ({source_key})")
+        for source_key, value in ordered
+    ]
+
+
+def _merge_and_dedupe(checked_values, manual_text):
+    """Combine checked suggestion values with manual textarea lines.
+
+    Deduplicates by exact string equality, preserving first-occurrence order —
+    storage-level dedup only; the suggestion *choices* stay undeduplicated
+    across vendors (see ``_suggestion_choices``).
+    """
+    combined = [*(checked_values or []), *_lines_to_list(manual_text)]
+    return list(dict.fromkeys(combined))
+
+
+def _split_stored_values(stored_values, choices):
+    """Split a stored list into (values matching a current choice, values that don't).
+
+    Used on form load to pre-check every suggestion checkbox whose value is
+    already stored (across all vendors sharing that value) and to surface any
+    stored value with no matching current suggestion in the manual textarea,
+    rather than silently dropping it from the form.
+    """
+    choice_values = {value for value, _ in choices}
+    stored_values = stored_values or []
+    matched = [v for v in stored_values if v in choice_values]
+    unmatched = [v for v in stored_values if v not in choice_values]
+    return matched, unmatched
+
+
 class SearchableItemForm(forms.ModelForm):
-    """Form for editing a SearchableItem (search term, priority, active, tags)."""
+    """Form for editing a SearchableItem (search term, priority, active, tags).
+
+    ``expected_product_line``/``expected_category`` are list-valued model
+    fields, each backed here by two form fields: a vendor-labeled checkbox
+    group of suggestions (sourced from ``ObservedCategoryValue`` for the
+    item's own configured sources, one checkbox per (source, value) pair —
+    not deduplicated across vendors, so a value two vendors share still shows
+    which vendor(s) it came from) and a manual free-text textarea for values
+    not in the suggestion list. Neither model field is bound directly; both
+    are assembled from the two form fields in ``save()``.
+    """
+
+    expected_product_line_suggestions = forms.MultipleChoiceField(
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label="Expected product line",
+        help_text=EXPECTED_PRODUCT_LINE_HELP_TEXT,
+    )
+    expected_product_line_manual = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 2}),
+        label="Other expected product line value(s)",
+        help_text=EXPECTED_PRODUCT_LINE_MANUAL_HELP_TEXT,
+    )
+    expected_category_suggestions = forms.MultipleChoiceField(
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label="Expected category",
+        help_text=EXPECTED_CATEGORY_HELP_TEXT,
+    )
+    expected_category_manual = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 2}),
+        label="Other expected category value(s)",
+        help_text=EXPECTED_CATEGORY_MANUAL_HELP_TEXT,
+    )
 
     class Meta:
         model = SearchableItem
@@ -106,9 +226,42 @@ class SearchableItemForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         _apply_bootstrap_form_classes(self)
 
+        instance = getattr(self, "instance", None)
+        product_line_choices = _suggestion_choices(instance, "product_line")
+        category_choices = _suggestion_choices(instance, "category")
+        self.fields["expected_product_line_suggestions"].choices = product_line_choices
+        self.fields["expected_category_suggestions"].choices = category_choices
+
+        if instance is not None and instance.pk:
+            pl_matched, pl_unmatched = _split_stored_values(
+                instance.expected_product_line, product_line_choices
+            )
+            cat_matched, cat_unmatched = _split_stored_values(
+                instance.expected_category, category_choices
+            )
+            self.initial["expected_product_line_suggestions"] = pl_matched
+            self.initial["expected_product_line_manual"] = _list_to_lines(pl_unmatched)
+            self.initial["expected_category_suggestions"] = cat_matched
+            self.initial["expected_category_manual"] = _list_to_lines(cat_unmatched)
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.expected_product_line = _merge_and_dedupe(
+            self.cleaned_data.get("expected_product_line_suggestions"),
+            self.cleaned_data.get("expected_product_line_manual"),
+        )
+        instance.expected_category = _merge_and_dedupe(
+            self.cleaned_data.get("expected_category_suggestions"),
+            self.cleaned_data.get("expected_category_manual"),
+        )
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
+
 
 class SearchableItemCreateForm(SearchableItemForm):
-    """Create view: search text only."""
+    """Create view: search text plus the optional expected product-line/category."""
 
     class Meta(SearchableItemForm.Meta):
         fields = ["text"]

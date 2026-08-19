@@ -54,6 +54,10 @@ Note also that `base_search_url` here contains no `{term}` placeholder at all â€
 
 If this fixture is refreshed, ideally keep (or re-capture) at least one query whose results include an off-term row, so this filtering behavior stays covered by a real vendor response rather than only synthetic test data.
 
+## Product-line / category filtering
+
+`item-category-relevance-filter` adds two further, independent checks at the same `add_result` choke point: `expected_product_line` (checked against `data.results[].category`, the vendor's broad game/product-line signal) and `expected_category` (checked against `subcategory`/`category`, the existing narrow set-level signal). `search_results_product_line_mismatch.json` is a small supplementary fixture (not a refresh of `search_results_sample.json`) covering both: a same-titled `"Lightning Bolt"` row from an unrelated product line (Disney Lorcana), and a same-product-line row from an unrelated set (Masters 25 vs. an expected Strixhaven). If `search_results_sample.json` itself is refreshed, ideally include at least one off-product-line row and one off-category row there too for regression coverage, mirroring this note.
+
 ## Rate-limit signals
 
 **Checked 2026-08-17, based on a single live sample.** One live `POST` was made to `https://app-filters.wizardtower.com/api/search` using the exact request config documented in the "Source form values" table above (test query `Lightning Bolt`). This confirms the *absence* of a signal on one ordinary request; it does not rule out header-based limiting that only activates under sustained/bursty load, which a single sample can't exercise.

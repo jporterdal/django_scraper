@@ -272,6 +272,7 @@ def terminalize(
                     title=candidate["title"],
                     price=candidate["price"],
                     category=candidate["category"],
+                    product_line=candidate.get("product_line", ""),
                     search_term=search_term,
                     item=item,
                     instock=candidate["instock"],
@@ -628,6 +629,11 @@ def fetch_one_unit(webupdate, item_source, fetcher=None, attempt=0, run_id=None,
         )
         return UnitResult(deferred=False, fetch_job=fetch_job)
 
+    if isinstance(parser, parsers.JSONSearchParser):
+        parser.expected_product_line = item.expected_product_line
+        parser.expected_category = item.expected_category
+        parser.source = source
+
     headers = source.build_request_headers(search_term)
 
     if pacing is None:
@@ -739,6 +745,7 @@ def fetch_one_unit(webupdate, item_source, fetcher=None, attempt=0, run_id=None,
             "title": result["title"],
             "price": result["price"] if result["instock"] else None,
             "category": result["category"],
+            "product_line": result.get("product_line", ""),
             "instock": 1 if result["instock"] else 0,
         }
         for result in matching_results

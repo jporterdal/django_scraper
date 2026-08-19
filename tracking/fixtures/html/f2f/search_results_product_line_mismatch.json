@@ -1,0 +1,48 @@
+{
+  "hits": {
+    "hits": [
+      {
+        "_source": {
+          "title": "Lightning Bolt [105] [Strixhaven Mystical Archive] [Foil]",
+          "General_Game_Type": ["Magic: The Gathering"],
+          "MTG_Set_Name": "Strixhaven: Mystical Archive",
+          "variants": [
+            {
+              "price": 30.99,
+              "inventoryQuantity": 4,
+              "selectedOptions": [{"name": "Condition", "value": "NM"}]
+            }
+          ]
+        }
+      },
+      {
+        "_source": {
+          "title": "Lightning Bolt",
+          "General_Game_Type": ["Disney Lorcana"],
+          "MTG_Set_Name": "Into the Inklands",
+          "variants": [
+            {
+              "price": 2.5,
+              "inventoryQuantity": 3,
+              "selectedOptions": [{"name": "Condition", "value": "NM"}]
+            }
+          ]
+        }
+      },
+      {
+        "_source": {
+          "title": "Lightning Bolt [Masters 25]",
+          "General_Game_Type": ["Magic: The Gathering"],
+          "MTG_Set_Name": "Masters 25",
+          "variants": [
+            {
+              "price": 2.0,
+              "inventoryQuantity": 2,
+              "selectedOptions": [{"name": "Condition", "value": "NM"}]
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

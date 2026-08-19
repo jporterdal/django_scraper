@@ -40,6 +40,10 @@ Note on `pageSize`: the fixture above was originally captured with `pageSize/24`
 
 `JSONSearchParser.add_result` (`tracking/parsers.py`) now rejects any row whose title does not contain the search term as a contiguous, case/whitespace-normalized phrase, so `ShopifyParser` drops off-term rows automatically. This is a shared base-class behavior verified against a live `wt` vendor response (see `tracking/fixtures/html/wt/README.md`) — `f2f` itself has only been checked against this captured fixture and a synthetic test case, not a live smoke test, since `search_results_sample.json` here (query `Lightning Bolt`) happens to contain only full-phrase-match rows. If this fixture is refreshed, ideally include at least one off-term row for regression coverage.
 
+## Product-line / category filtering
+
+`item-category-relevance-filter` adds two further, independent checks at the same `add_result` choke point: `expected_product_line` (checked against `_source.General_Game_Type`/`Game Type`, the vendor's broad game/product-line signal) and `expected_category` (checked against `MTG_Set_Name`/`Set`, the existing narrow set-level signal). `search_results_product_line_mismatch.json` is a small supplementary fixture covering both: a same-titled `"Lightning Bolt"` hit from an unrelated product line (Disney Lorcana), and a same-product-line hit from an unrelated set (Masters 25 vs. an expected Strixhaven). If `search_results_sample.json` itself is refreshed, ideally include at least one off-product-line row and one off-category row there too for regression coverage, mirroring this note.
+
 ## Pagination
 
 `ShopifyParser.next_page_url` (`tracking/parsers.py`) increments the `/page/{n}/` URL segment via regex (`re.subn(r"(/page/)(\d+)", ...)`) each time it's asked for a next page, and returns `None` once a page's `response.json()["hits"]["hits"]` comes back empty — i.e. pagination stops naturally when the API runs out of results, not on a hardcoded page count.

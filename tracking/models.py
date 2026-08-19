@@ -182,6 +182,29 @@ class SearchableItem(models.Model):
         verbose_name="Tags for grouping and filtering items",
     )
 
+    expected_product_line = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name=(
+            "Expected product line(s) (e.g. ['Magic'], or ['Magic', 'MTG'] when "
+            "vendors word it differently) — a result must contain at least one "
+            "listed value to disambiguate this item from a same-titled item in "
+            "an unrelated product line. Empty list disables this check."
+        ),
+    )
+
+    expected_category = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name=(
+            "Expected category/set value(s) (e.g. a specific MTG set, possibly "
+            "spelled differently per vendor) — a result must contain at least "
+            "one listed value to narrow results beyond product-line "
+            "disambiguation. Independent of expected product line; empty list "
+            "disables this check."
+        ),
+    )
+
 
 class Tag(models.Model):
     name = models.CharField(
@@ -362,6 +385,13 @@ class SearchResult(models.Model):
         verbose_name="Category returned in search result",
     )
 
+    product_line = models.CharField(
+        max_length=250,
+        null=True,
+        blank=True,
+        verbose_name="Product line returned in search result",
+    )
+
     item = models.ForeignKey(
         SearchableItem,
         on_delete=models.CASCADE,
@@ -397,6 +427,69 @@ class SearchResult(models.Model):
         from .scrape import run_web_update
 
         return run_web_update(items=items)
+
+
+class ObservedCategoryValue(models.Model):
+    """Every raw category/product-line string a parser has ever seen per source.
+
+    Populated unconditionally by ``JSONSearchParser.add_result`` for every row
+    processed, independent of whether that row is ultimately accepted or
+    rejected by item-level filtering — see the ``item-category-relevance``
+    capability. Powers the value-discovery suggestions on the ``SearchableItem``
+    form; not a taxonomy and not sourced from ``SearchResult`` (which only ever
+    holds accepted rows).
+    """
+
+    class FieldName(models.TextChoices):
+        CATEGORY = "category", "Category"
+        PRODUCT_LINE = "product_line", "Product line"
+
+    source = models.ForeignKey(
+        Source,
+        on_delete=models.CASCADE,
+        verbose_name="Source this value was observed from",
+    )
+    field_name = models.CharField(
+        max_length=20,
+        choices=FieldName.choices,
+        verbose_name="Which signal this value was observed for",
+    )
+    value = models.CharField(
+        max_length=250,
+        verbose_name="Raw value as observed from the vendor response",
+    )
+    last_seen = models.DateTimeField(
+        verbose_name="When this value was most recently observed",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source", "field_name", "value"],
+                name="unique_observed_category_value",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["source", "field_name"]),
+        ]
+
+
+def observed_values_for_item(item, field_name):
+    """Distinct raw values observed for ``field_name``, scoped to ``item``'s sources.
+
+    Ordered most-recently-observed first. Sourced from ``ObservedCategoryValue``,
+    not ``SearchResult`` (see that model's docstring) — non-binding suggestions
+    for the value-discovery UI, not an enforced taxonomy. Returns ``[]`` when the
+    item has no configured sources or none of them have observations yet.
+    """
+    return list(
+        ObservedCategoryValue.objects.filter(
+            source__in=Source.objects.filter(itemsource__item=item),
+            field_name=field_name,
+        )
+        .order_by("-last_seen")
+        .values_list("source__key", "value")
+    )
 
 
 class UpdateSchedule(models.Model):

@@ -1,7 +1,10 @@
 import re
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from search_scrape.search_scrape import SearchParser
+from django.utils import timezone
 import logging
+
+from .models import ObservedCategoryValue
 
 logger = logging.getLogger(__name__)
 
@@ -11,12 +14,33 @@ def _normalize_for_match(value):
     return re.sub(r"\s+", " ", str(value).strip().lower())
 
 
+def _normalized_substring_match(expected, signal):
+    """True if normalized ``expected`` appears as a literal substring of normalized ``signal``.
+
+    ``expected`` is ``re.escape()``'d before matching so callers (item-level
+    ``expected_product_line``/``expected_category`` values) can contain regex
+    metacharacters without any special-character surprises.
+    """
+    pattern = re.escape(_normalize_for_match(expected))
+    return re.search(pattern, _normalize_for_match(signal)) is not None
+
+
+def _coerce_signal(value):
+    """Normalize a vendor field that may be a list or scalar into a display string."""
+    if isinstance(value, list):
+        return ", ".join(str(v) for v in value if v)
+    return value or ""
+
+
 class JSONSearchParser:
     """Base class for JSON API search parsers. Subclasses implement parse_data()."""
     data_keys = ["category", "title", "price", "instock"]
 
-    def __init__(self, term=""):
+    def __init__(self, term="", expected_product_line=None, expected_category=None, source=None):
         self.term = term
+        self.expected_product_line = list(expected_product_line or [])
+        self.expected_category = list(expected_category or [])
+        self.source = source
         self.url = None
         self.results = []
 
@@ -48,7 +72,26 @@ class JSONSearchParser:
     def parse_data(self, data):
         raise NotImplementedError
 
-    def add_result(self, title, price, instock, category=""):
+    def _record_observed(self, field_name, value):
+        """Unconditionally log a raw vendor signal for value-discovery suggestions.
+
+        Runs for every row processed, before filtering decides whether the row
+        is kept, so a rejected row's category/product-line vocabulary is still
+        discoverable (see ``ObservedCategoryValue``).
+        """
+        if self.source is None or not value:
+            return
+        ObservedCategoryValue.objects.update_or_create(
+            source=self.source,
+            field_name=field_name,
+            value=value,
+            defaults={"last_seen": timezone.now()},
+        )
+
+    def add_result(self, title, price, instock, category="", product_line=""):
+        self._record_observed(ObservedCategoryValue.FieldName.CATEGORY, category)
+        self._record_observed(ObservedCategoryValue.FieldName.PRODUCT_LINE, product_line)
+
         term_normalized = _normalize_for_match(self.term)
         if term_normalized and term_normalized not in _normalize_for_match(title):
             logger.debug(
@@ -56,11 +99,33 @@ class JSONSearchParser:
                 title, self.term,
             )
             return
+
+        if self.expected_product_line and not any(
+            _normalized_substring_match(value, product_line)
+            for value in self.expected_product_line
+        ):
+            logger.debug(
+                "Dropping off-product-line result: title=%r product_line=%r expected_product_line=%r",
+                title, product_line, self.expected_product_line,
+            )
+            return
+
+        if self.expected_category and not any(
+            _normalized_substring_match(value, category)
+            for value in self.expected_category
+        ):
+            logger.debug(
+                "Dropping off-category result: title=%r category=%r expected_category=%r",
+                title, category, self.expected_category,
+            )
+            return
+
         self.results.append({
             "title": str(title),
             "price": float(price),
             "instock": 1 if instock else 0,
             "category": category or "",
+            "product_line": product_line or "",
         })
 
 
@@ -141,6 +206,9 @@ class ShopifyParser(JSONSearchParser):
             src = hit.get("_source", {})
             title = src.get("title", "")
             category = src.get("MTG_Set_Name") or src.get("Set") or ""
+            product_line = _coerce_signal(
+                src.get("General_Game_Type") or src.get("Game Type")
+            )
             for variant in src.get("variants", []):
                 condition = ""
                 for opt in variant.get("selectedOptions", []):
@@ -152,6 +220,7 @@ class ShopifyParser(JSONSearchParser):
                     price=variant.get("price", 0),
                     instock=variant.get("inventoryQuantity", 0) > 0,
                     category=category,
+                    product_line=product_line,
                 )
 
     def next_page_url(self, response, current_url, page_number):
@@ -193,6 +262,7 @@ class WtFiltersParser(JSONSearchParser):
                 price=row.get("price", 0),
                 instock=row.get("in_stock"),
                 category=row.get("subcategory") or row.get("category", ""),
+                product_line=row.get("category", ""),
             )
 
     def next_page_body(self, response, current_body, page_number):
@@ -207,6 +277,7 @@ class StorepassParser(JSONSearchParser):
             title = product.get("display_name") or product.get("name", "")
             pld = product.get("productLineData")
             category = pld.get("set", "") if isinstance(pld, dict) else ""
+            product_line = product.get("vendor", "")
             for variant in product.get("variantInfo", []):
                 condition = variant.get("title", "")
                 display = f"{title} ({condition})" if condition else title
@@ -215,6 +286,7 @@ class StorepassParser(JSONSearchParser):
                     price=variant.get("price", 0),
                     instock=variant.get("inventory_quantity", 0) > 0,
                     category=category,
+                    product_line=product_line,
                 )
 
     def next_page_url(self, response, current_url, page_number):

@@ -142,6 +142,8 @@ No cookies or auth required (verified 2026-07-07). Bare POST without `context` o
 | `data.results[].tags[]` | Finish/set tags, e.g. `{field: "mtg_mtg_finish", value: "Foil"}` |
 | `data.results[].collector_number` | e.g. `0042` |
 
+**item-category-relevance-filter:** wt's own field literally named `category` is actually the *broad* game/product-line signal (e.g. `Magic the Gathering Singles`), not the narrow set/printing one — it feeds this app's `expected_product_line` check and the `product_line` column. The narrow set/printing signal — `subcategory` (preferred) or `category` as fallback — is what this app's own `category` field/column and `expected_category` check use, unchanged from before this capability. See `design.md` Decision 6/7 under `openspec/changes/item-category-relevance-filter/` for the full rationale.
+
 ### HTML DOM (reference only — JS-rendered)
 
 | Field | CSS / attribute |
