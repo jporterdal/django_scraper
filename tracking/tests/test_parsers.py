@@ -152,6 +152,32 @@ class JSONSearchParserRelevanceTests(SimpleTestCase):
 
         self.assertEqual(len(parser.results), 1)
 
+    def test_ascii_term_matches_accented_title(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(term="Kili the Resourceful")
+        parser.add_result(title="Kíli the Resourceful", price=1, instock=True)
+
+        self.assertEqual(len(parser.results), 1)
+
+    def test_accented_term_matches_ascii_title(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(term="Kíli the Resourceful")
+        parser.add_result(title="Kili the Resourceful", price=1, instock=True)
+
+        self.assertEqual(len(parser.results), 1)
+
+    def test_non_decomposing_special_character_is_not_folded(self):
+        """ß does not decompose into a base letter + combining mark under NFKD,
+        so it is intentionally out of scope for diacritic folding."""
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(term="Straße")
+        parser.add_result(title="Strasse", price=1, instock=True)
+
+        self.assertEqual(parser.results, [])
+
     def test_blank_term_disables_the_check(self):
         from tracking.parsers import JSONSearchParser
 

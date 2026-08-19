@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from search_scrape.search_scrape import SearchParser
 from django.utils import timezone
@@ -10,8 +11,17 @@ logger = logging.getLogger(__name__)
 
 
 def _normalize_for_match(value):
-    """Lowercase and collapse whitespace, for term/title comparison."""
-    return re.sub(r"\s+", " ", str(value).strip().lower())
+    """Lowercase, fold diacritics, and collapse whitespace, for term/title comparison.
+
+    Diacritic folding only covers characters that decompose into a base letter
+    plus a combining mark under NFKD (e.g. i + acute accent). Characters that
+    are their own distinct letter rather than an accented variant of one -
+    e.g. German ß, æ, ø - do not decompose this way and are intentionally left
+    as exact-match only rather than growing this into a transliteration engine.
+    """
+    text = unicodedata.normalize("NFKD", str(value).strip().lower())
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", text)
 
 
 def _normalized_substring_match(expected, signal):
