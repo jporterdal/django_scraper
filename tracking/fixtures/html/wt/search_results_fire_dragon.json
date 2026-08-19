@@ -1,0 +1,1169 @@
+{
+  "data": {
+    "results": [
+      {
+        "product_id": 8258369781930,
+        "handle": "fire-dragon-por",
+        "title": "Fire Dragon (POR)",
+        "display_name": "Fire Dragon",
+        "card_name": "Fire Dragon",
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/bf1f26d1-4381-470a-bfbf-ef226f980597.png?v=1759289304",
+        "price": 9,
+        "compare_at_price": null,
+        "price_condition": "NM",
+        "price_condition_variant_id": null,
+        "in_stock": false,
+        "total_inventory": 0,
+        "set_code": null,
+        "set_name": null,
+        "category": "Magic the Gathering Singles",
+        "subcategory": "Portal 1",
+        "finish": null,
+        "collector_number": "0125",
+        "variant_count": 4,
+        "default_variant_id": null,
+        "tags": [
+          {
+            "field": "mtg_mtg_finish",
+            "value": "Regular",
+            "style": "regular"
+          }
+        ],
+        "tier": 1,
+        "ft_score": 10.236499786376953,
+        "url": "https://wizardstower.myshopify.com/products/fire-dragon-por",
+        "condition_variants": [
+          {
+            "variant_id": 47479661035690,
+            "code": "NM",
+            "price": 9,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47479661068458,
+            "code": "SP",
+            "price": 8.28,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47479661101226,
+            "code": "MP",
+            "price": 7.56,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47479661133994,
+            "code": "HP",
+            "price": 6.3,
+            "inventory": 0
+          }
+        ]
+      },
+      {
+        "product_id": 8245649211562,
+        "handle": "dragon-fire-01-c1-satin-holographic-foil-lor-00-01-c1-hf",
+        "title": "Dragon Fire (01/C1) - Satin Holographic Foil",
+        "display_name": "Dragon Fire",
+        "card_name": null,
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/544498_in_1000x1000_8dc23637-7dcd-4e54-93e3-d562b7f8c528.jpg?v=1772131042",
+        "price": 60,
+        "compare_at_price": null,
+        "price_condition": "NM",
+        "price_condition_variant_id": null,
+        "in_stock": false,
+        "total_inventory": 0,
+        "set_code": null,
+        "set_name": null,
+        "category": "Disney Lorcana Singles",
+        "subcategory": "Promo Cards",
+        "finish": null,
+        "collector_number": "0001",
+        "variant_count": 3,
+        "default_variant_id": null,
+        "tags": [
+          {
+            "field": "lor_lorcana_finish",
+            "value": "Holofoil",
+            "style": "foil"
+          },
+          {
+            "field": "card_tag",
+            "value": "01/C1",
+            "style": "default"
+          }
+        ],
+        "tier": 5,
+        "ft_score": 10.236499786376953,
+        "url": "https://wizardstower.myshopify.com/products/dragon-fire-01-c1-satin-holographic-foil-lor-00-01-c1-hf",
+        "condition_variants": [
+          {
+            "variant_id": 47430779895978,
+            "code": "NM",
+            "price": 60,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47430779928746,
+            "code": "SP",
+            "price": 55.2,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47430779961514,
+            "code": "MP",
+            "price": 50.4,
+            "inventory": 0
+          }
+        ]
+      },
+      {
+        "product_id": 8245695611050,
+        "handle": "dragon-fire-0130-cold-foil-lor-01-0130-cf",
+        "title": "Dragon Fire (0130) - Cold Foil",
+        "display_name": "Dragon Fire",
+        "card_name": null,
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/492710_in_1000x1000_be4ba2cc-a160-419b-9eef-6ff831c5bda7.jpg?v=1772131167",
+        "price": 1,
+        "compare_at_price": null,
+        "price_condition": "NM",
+        "price_condition_variant_id": null,
+        "in_stock": true,
+        "total_inventory": 2,
+        "set_code": null,
+        "set_name": null,
+        "category": "Disney Lorcana Singles",
+        "subcategory": "The First Chapter",
+        "finish": null,
+        "collector_number": "0130",
+        "variant_count": 3,
+        "default_variant_id": null,
+        "tags": [
+          {
+            "field": "lor_lorcana_finish",
+            "value": "Cold Foil",
+            "style": "foil"
+          }
+        ],
+        "tier": 5,
+        "ft_score": 10.236499786376953,
+        "url": "https://wizardstower.myshopify.com/products/dragon-fire-0130-cold-foil-lor-01-0130-cf",
+        "condition_variants": [
+          {
+            "variant_id": 47430919979178,
+            "code": "NM",
+            "price": 1,
+            "inventory": 2
+          },
+          {
+            "variant_id": 47430920011946,
+            "code": "SP",
+            "price": 0.92,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47430920044714,
+            "code": "MP",
+            "price": 0.84,
+            "inventory": 0
+          }
+        ]
+      },
+      {
+        "product_id": 8245695774890,
+        "handle": "dragon-fire-0130-lor-01-0130-rg",
+        "title": "Dragon Fire (0130)",
+        "display_name": "Dragon Fire",
+        "card_name": null,
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/492710_in_1000x1000_e4627753-8d06-4507-8b27-fef6eafb8eea.jpg?v=1772131161",
+        "price": 0.75,
+        "compare_at_price": null,
+        "price_condition": "NM",
+        "price_condition_variant_id": null,
+        "in_stock": true,
+        "total_inventory": 8,
+        "set_code": null,
+        "set_name": null,
+        "category": "Disney Lorcana Singles",
+        "subcategory": "The First Chapter",
+        "finish": null,
+        "collector_number": "0130",
+        "variant_count": 3,
+        "default_variant_id": null,
+        "tags": [
+          {
+            "field": "lor_lorcana_finish",
+            "value": "Normal",
+            "style": "regular"
+          }
+        ],
+        "tier": 5,
+        "ft_score": 10.236499786376953,
+        "url": "https://wizardstower.myshopify.com/products/dragon-fire-0130-lor-01-0130-rg",
+        "condition_variants": [
+          {
+            "variant_id": 47430920470698,
+            "code": "NM",
+            "price": 0.75,
+            "inventory": 8
+          },
+          {
+            "variant_id": 47430920503466,
+            "code": "SP",
+            "price": 0.69,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47430920536234,
+            "code": "MP",
+            "price": 0.63,
+            "inventory": 0
+          }
+        ]
+      },
+      {
+        "product_id": 8251718631594,
+        "handle": "dragons-fire-afr-foil",
+        "title": "Dragon's Fire (AFR) - Foil",
+        "display_name": "Dragon's Fire",
+        "card_name": "Dragon's Fire",
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/9666987a-5267-46d3-9b00-31baa92a9cbc_cdd2988f-d0e6-496a-80d6-009ef8eabf17.png?v=1758834060",
+        "price": 0.35,
+        "compare_at_price": null,
+        "price_condition": "NM",
+        "price_condition_variant_id": null,
+        "in_stock": true,
+        "total_inventory": 4,
+        "set_code": null,
+        "set_name": null,
+        "category": "Magic the Gathering Singles",
+        "subcategory": "Adventures in the Forgotten Realms",
+        "finish": null,
+        "collector_number": "0139",
+        "variant_count": 4,
+        "default_variant_id": null,
+        "tags": [
+          {
+            "field": "mtg_mtg_finish",
+            "value": "Foil",
+            "style": "foil"
+          }
+        ],
+        "tier": 5,
+        "ft_score": 10.236499786376953,
+        "url": "https://wizardstower.myshopify.com/products/dragons-fire-afr-foil",
+        "condition_variants": [
+          {
+            "variant_id": 47457097646250,
+            "code": "NM",
+            "price": 0.35,
+            "inventory": 4
+          },
+          {
+            "variant_id": 47457097679018,
+            "code": "SP",
+            "price": 0.32,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47457097711786,
+            "code": "MP",
+            "price": 0.29,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47457097744554,
+            "code": "HP",
+            "price": 0.25,
+            "inventory": 0
+          }
+        ]
+      },
+      {
+        "product_id": 8251718697130,
+        "handle": "dragons-fire-afr",
+        "title": "Dragon's Fire (AFR)",
+        "display_name": "Dragon's Fire",
+        "card_name": "Dragon's Fire",
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/9666987a-5267-46d3-9b00-31baa92a9cbc.png?v=1758834059",
+        "price": 0.25,
+        "compare_at_price": null,
+        "price_condition": "NM",
+        "price_condition_variant_id": null,
+        "in_stock": true,
+        "total_inventory": 3,
+        "set_code": null,
+        "set_name": null,
+        "category": "Magic the Gathering Singles",
+        "subcategory": "Adventures in the Forgotten Realms",
+        "finish": null,
+        "collector_number": "0139",
+        "variant_count": 4,
+        "default_variant_id": null,
+        "tags": [
+          {
+            "field": "mtg_mtg_finish",
+            "value": "Regular",
+            "style": "regular"
+          }
+        ],
+        "tier": 5,
+        "ft_score": 10.236499786376953,
+        "url": "https://wizardstower.myshopify.com/products/dragons-fire-afr",
+        "condition_variants": [
+          {
+            "variant_id": 47457097908394,
+            "code": "NM",
+            "price": 0.25,
+            "inventory": 2
+          },
+          {
+            "variant_id": 47457097941162,
+            "code": "SP",
+            "price": 0.23,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47457097973930,
+            "code": "MP",
+            "price": 0.21,
+            "inventory": 1
+          },
+          {
+            "variant_id": 47457098006698,
+            "code": "HP",
+            "price": 0.18,
+            "inventory": 0
+          }
+        ]
+      },
+      {
+        "product_id": 8253237625002,
+        "handle": "dragons-fire-j25",
+        "title": "Dragon's Fire (J25)",
+        "display_name": "Dragon's Fire",
+        "card_name": "Dragon's Fire",
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/3a06bf6c-1b18-4b00-84a4-d7e36b7ae0c1.png?v=1758849043",
+        "price": 0.5,
+        "compare_at_price": null,
+        "price_condition": "NM",
+        "price_condition_variant_id": null,
+        "in_stock": true,
+        "total_inventory": 4,
+        "set_code": null,
+        "set_name": null,
+        "category": "Magic the Gathering Singles",
+        "subcategory": "Foundations - Jumpstart",
+        "finish": null,
+        "collector_number": "0134",
+        "variant_count": 4,
+        "default_variant_id": null,
+        "tags": [
+          {
+            "field": "mtg_mtg_finish",
+            "value": "Regular",
+            "style": "regular"
+          }
+        ],
+        "tier": 5,
+        "ft_score": 10.236499786376953,
+        "url": "https://wizardstower.myshopify.com/products/dragons-fire-j25",
+        "condition_variants": [
+          {
+            "variant_id": 47463185973418,
+            "code": "NM",
+            "price": 0.5,
+            "inventory": 4
+          },
+          {
+            "variant_id": 47463186006186,
+            "code": "SP",
+            "price": 0.46,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47463186038954,
+            "code": "MP",
+            "price": 0.42,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47463186071722,
+            "code": "HP",
+            "price": 0.35,
+            "inventory": 0
+          }
+        ]
+      },
+      {
+        "product_id": 8283902279850,
+        "handle": "dragon_fire_0133_cold_foil",
+        "title": "Dragon Fire (0133) - Cold Foil",
+        "display_name": "Dragon Fire",
+        "card_name": null,
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/659245_in_1000x1000_27e4b60c-d29f-435b-bf5f-800161901247.jpg?v=1772131213",
+        "price": 0.75,
+        "compare_at_price": null,
+        "price_condition": "NM",
+        "price_condition_variant_id": null,
+        "in_stock": true,
+        "total_inventory": 5,
+        "set_code": null,
+        "set_name": null,
+        "category": "Disney Lorcana Singles",
+        "subcategory": "Whispers in the Well",
+        "finish": null,
+        "collector_number": "0133",
+        "variant_count": 3,
+        "default_variant_id": null,
+        "tags": [
+          {
+            "field": "lor_lorcana_finish",
+            "value": "Cold Foil",
+            "style": "foil"
+          }
+        ],
+        "tier": 5,
+        "ft_score": 10.236499786376953,
+        "url": "https://wizardstower.myshopify.com/products/dragon_fire_0133_cold_foil",
+        "condition_variants": [
+          {
+            "variant_id": 47591873446058,
+            "code": "NM",
+            "price": 0.75,
+            "inventory": 5
+          },
+          {
+            "variant_id": 47591873478826,
+            "code": "SP",
+            "price": 0.69,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47591873511594,
+            "code": "MP",
+            "price": 0.63,
+            "inventory": 0
+          }
+        ]
+      },
+      {
+        "product_id": 8283902541994,
+        "handle": "dragon_fire_0133",
+        "title": "Dragon Fire (0133)",
+        "display_name": "Dragon Fire",
+        "card_name": null,
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/659245_in_1000x1000_7c5da8d9-7b3f-4990-9cac-ec6f88c53d72.jpg?v=1772131216",
+        "price": 0.5,
+        "compare_at_price": null,
+        "price_condition": "NM",
+        "price_condition_variant_id": null,
+        "in_stock": true,
+        "total_inventory": 16,
+        "set_code": null,
+        "set_name": null,
+        "category": "Disney Lorcana Singles",
+        "subcategory": "Whispers in the Well",
+        "finish": null,
+        "collector_number": "0133",
+        "variant_count": 3,
+        "default_variant_id": null,
+        "tags": [
+          {
+            "field": "lor_lorcana_finish",
+            "value": "Normal",
+            "style": "regular"
+          }
+        ],
+        "tier": 5,
+        "ft_score": 10.236499786376953,
+        "url": "https://wizardstower.myshopify.com/products/dragon_fire_0133",
+        "condition_variants": [
+          {
+            "variant_id": 47591874330794,
+            "code": "NM",
+            "price": 0.5,
+            "inventory": 16
+          },
+          {
+            "variant_id": 47591874363562,
+            "code": "SP",
+            "price": 0.46,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47591874396330,
+            "code": "MP",
+            "price": 0.42,
+            "inventory": 0
+          }
+        ]
+      },
+      {
+        "product_id": 8329562161322,
+        "handle": "deck-protectors-dragon-shield-matte-dual-fire-horse-100ct",
+        "title": "Deck Protectors - Dragon Shield Matte Dual Fire Horse 100ct",
+        "display_name": "Deck Protectors - Dragon Shield Matte Dual Fire Horse 100ct",
+        "card_name": null,
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/DeckProtectors-DragonShieldMatteDualFireHorse100ct.jpg?v=1767637921",
+        "price": 31.99,
+        "compare_at_price": null,
+        "price_condition": null,
+        "price_condition_variant_id": null,
+        "in_stock": true,
+        "total_inventory": 24,
+        "set_code": null,
+        "set_name": null,
+        "category": "Card Game Supplies",
+        "subcategory": "Card Game Deck Protectors",
+        "finish": null,
+        "collector_number": null,
+        "variant_count": 1,
+        "default_variant_id": 47812543119530,
+        "tags": [],
+        "tier": 5,
+        "ft_score": 10.236499786376953,
+        "url": "https://wizardstower.myshopify.com/products/deck-protectors-dragon-shield-matte-dual-fire-horse-100ct"
+      },
+      {
+        "product_id": 8329562325162,
+        "handle": "playmat-dragon-shield-fire-horse-with-tube",
+        "title": "Playmat - Dragon Shield Fire Horse with Tube",
+        "display_name": "Playmat - Dragon Shield Fire Horse with Tube",
+        "card_name": null,
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/Playmat-DragonShieldFireHorsewithTube.jpg?v=1767638698",
+        "price": 35.49,
+        "compare_at_price": null,
+        "price_condition": null,
+        "price_condition_variant_id": null,
+        "in_stock": false,
+        "total_inventory": 0,
+        "set_code": null,
+        "set_name": null,
+        "category": "Card Game Supplies",
+        "subcategory": "Playmats",
+        "finish": null,
+        "collector_number": null,
+        "variant_count": 1,
+        "default_variant_id": 47812543283370,
+        "tags": [],
+        "tier": 5,
+        "ft_score": 10.236499786376953,
+        "url": "https://wizardstower.myshopify.com/products/playmat-dragon-shield-fire-horse-with-tube"
+      },
+      {
+        "product_id": 8372660633770,
+        "handle": "playmat-disney-lorcana-winterspell-dragon-fire",
+        "title": "Playmat - Disney Lorcana Winterspell Dragon Fire",
+        "display_name": "Playmat - Disney Lorcana Winterspell Dragon Fire",
+        "card_name": null,
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/Playmat-DisneyLorcanaWinterspellDragonFire.jpg?v=1770916341",
+        "price": 37.99,
+        "compare_at_price": null,
+        "price_condition": null,
+        "price_condition_variant_id": null,
+        "in_stock": true,
+        "total_inventory": 1,
+        "set_code": null,
+        "set_name": null,
+        "category": "Card Game Supplies",
+        "subcategory": "Playmats",
+        "finish": null,
+        "collector_number": null,
+        "variant_count": 1,
+        "default_variant_id": 48002153447594,
+        "tags": [],
+        "tier": 5,
+        "ft_score": 10.236499786376953,
+        "url": "https://wizardstower.myshopify.com/products/playmat-disney-lorcana-winterspell-dragon-fire"
+      },
+      {
+        "product_id": 8233039364266,
+        "handle": "dungeons-dragons-premium-figures-female-fire-genasi-wizard",
+        "title": "Dungeons & Dragons Premium Figures - Female Fire Genasi Wizard",
+        "display_name": "Dungeons & Dragons Premium Figures - Female Fire Genasi Wizard",
+        "card_name": null,
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/Product_20Image_20Background_8751dd2c-607c-4f58-bd01-0bcaf50ce42a.png?v=1757972858",
+        "price": 9.99,
+        "compare_at_price": null,
+        "price_condition": null,
+        "price_condition_variant_id": null,
+        "in_stock": false,
+        "total_inventory": 0,
+        "set_code": null,
+        "set_name": null,
+        "category": "Role Playing Games Miniatures",
+        "subcategory": "Painted Miniatures > Miniatures Boxed Sets",
+        "finish": null,
+        "collector_number": null,
+        "variant_count": 1,
+        "default_variant_id": 47401620111530,
+        "tags": [],
+        "tier": 5,
+        "ft_score": 6.228087902069092,
+        "url": "https://wizardstower.myshopify.com/products/dungeons-dragons-premium-figures-female-fire-genasi-wizard"
+      },
+      {
+        "product_id": 8233042739370,
+        "handle": "wardlings-figures-fire-orc-fire-centipede",
+        "title": "Wardlings Figures - Fire Orc & Fire Centipede",
+        "display_name": "Wardlings Figures - Fire Orc & Fire Centipede",
+        "card_name": null,
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/Fire-orc.png?v=1757972855",
+        "price": 9.99,
+        "compare_at_price": null,
+        "price_condition": null,
+        "price_condition_variant_id": null,
+        "in_stock": true,
+        "total_inventory": 2,
+        "set_code": null,
+        "set_name": null,
+        "category": "Role Playing Games Miniatures",
+        "subcategory": "Painted Miniatures > Miniatures Boxed Sets",
+        "finish": null,
+        "collector_number": null,
+        "variant_count": 1,
+        "default_variant_id": 47401623552170,
+        "tags": [],
+        "tier": 6,
+        "ft_score": 12.456175804138184,
+        "url": "https://wizardstower.myshopify.com/products/wardlings-figures-fire-orc-fire-centipede"
+      },
+      {
+        "product_id": 8258555052202,
+        "handle": "curse-of-the-fire-penguin-curse-of-the-fire-penguin-creature-unh-foil",
+        "title": "Curse of the Fire Penguin // Curse of the Fire Penguin Creature (UNH) - Foil",
+        "display_name": "Curse of the Fire Penguin // Curse of the Fire Penguin Creature",
+        "card_name": "Curse of the Fire Penguin // Curse of the Fire Penguin Creature",
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/c01e8089-c3a9-413b-ae2d-39ede87516d3.png?v=1759289850",
+        "price": 9.75,
+        "compare_at_price": null,
+        "price_condition": "NM",
+        "price_condition_variant_id": null,
+        "in_stock": false,
+        "total_inventory": 0,
+        "set_code": null,
+        "set_name": null,
+        "category": "Magic the Gathering Singles",
+        "subcategory": "Unhinged",
+        "finish": null,
+        "collector_number": "0073",
+        "variant_count": 4,
+        "default_variant_id": null,
+        "tags": [
+          {
+            "field": "mtg_mtg_finish",
+            "value": "Foil",
+            "style": "foil"
+          }
+        ],
+        "tier": 6,
+        "ft_score": 12.456175804138184,
+        "url": "https://wizardstower.myshopify.com/products/curse-of-the-fire-penguin-curse-of-the-fire-penguin-creature-unh-foil",
+        "condition_variants": [
+          {
+            "variant_id": 47480416862378,
+            "code": "NM",
+            "price": 9.75,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47480416895146,
+            "code": "SP",
+            "price": 8.97,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47480416927914,
+            "code": "MP",
+            "price": 8.19,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47480416960682,
+            "code": "HP",
+            "price": 6.83,
+            "inventory": 0
+          }
+        ]
+      },
+      {
+        "product_id": 8258579726506,
+        "handle": "curse-of-the-fire-penguin-curse-of-the-fire-penguin-creature-unh",
+        "title": "Curse of the Fire Penguin // Curse of the Fire Penguin Creature (UNH)",
+        "display_name": "Curse of the Fire Penguin // Curse of the Fire Penguin Creature",
+        "card_name": "Curse of the Fire Penguin // Curse of the Fire Penguin Creature",
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/c01e8089-c3a9-413b-ae2d-39ede87516d3_528e2656-fc14-4950-a1a9-b84f1f2bc754.png?v=1759289917",
+        "price": 1.75,
+        "compare_at_price": null,
+        "price_condition": "NM",
+        "price_condition_variant_id": null,
+        "in_stock": true,
+        "total_inventory": 1,
+        "set_code": null,
+        "set_name": null,
+        "category": "Magic the Gathering Singles",
+        "subcategory": "Unhinged",
+        "finish": null,
+        "collector_number": "0073",
+        "variant_count": 4,
+        "default_variant_id": null,
+        "tags": [
+          {
+            "field": "mtg_mtg_finish",
+            "value": "Regular",
+            "style": "regular"
+          }
+        ],
+        "tier": 6,
+        "ft_score": 12.456175804138184,
+        "url": "https://wizardstower.myshopify.com/products/curse-of-the-fire-penguin-curse-of-the-fire-penguin-creature-unh",
+        "condition_variants": [
+          {
+            "variant_id": 47480518574250,
+            "code": "NM",
+            "price": 1.75,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47480518607018,
+            "code": "SP",
+            "price": 1.61,
+            "inventory": 1
+          },
+          {
+            "variant_id": 47480518639786,
+            "code": "MP",
+            "price": 1.47,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47480518672554,
+            "code": "HP",
+            "price": 1.23,
+            "inventory": 0
+          }
+        ]
+      },
+      {
+        "product_id": 8243048841386,
+        "handle": "tote-bag-brown-dragon-map-and-light-blue-dragon",
+        "title": "Tote Bag - Brown Dragon Map and Light Blue Dragon",
+        "display_name": "Tote Bag - Brown Dragon Map and Light Blue Dragon",
+        "card_name": null,
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/Plushie_20Tote_20-_20Dragon.jpg?v=1757972641",
+        "price": 40.99,
+        "compare_at_price": null,
+        "price_condition": null,
+        "price_condition_variant_id": null,
+        "in_stock": true,
+        "total_inventory": 1,
+        "set_code": null,
+        "set_name": null,
+        "category": "Card Game Supplies",
+        "subcategory": "Binders & Card Storage",
+        "finish": null,
+        "collector_number": null,
+        "variant_count": 1,
+        "default_variant_id": 47424442826922,
+        "tags": [],
+        "tier": 6,
+        "ft_score": 8.016824722290039,
+        "url": "https://wizardstower.myshopify.com/products/tote-bag-brown-dragon-map-and-light-blue-dragon"
+      },
+      {
+        "product_id": 8243061686442,
+        "handle": "deck-protectors-dragon-shield-matte-dual-art-year-of-the-dragon-2024-100ct",
+        "title": "Deck Protectors - Dragon Shield Matte Dual Art Year of the Dragon 2024 100ct",
+        "display_name": "Deck Protectors - Dragon Shield Matte Dual Art Year of the Dragon 2024 100ct",
+        "card_name": null,
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/DRAGON_20SHIELD_20SLEEVES_20YEAR_20OF_20DRAGON_202024.jpg?v=1757972697",
+        "price": 26.49,
+        "compare_at_price": null,
+        "price_condition": null,
+        "price_condition_variant_id": null,
+        "in_stock": true,
+        "total_inventory": 1,
+        "set_code": null,
+        "set_name": null,
+        "category": "Card Game Supplies",
+        "subcategory": "Card Game Deck Protectors",
+        "finish": null,
+        "collector_number": null,
+        "variant_count": 1,
+        "default_variant_id": 47424457343146,
+        "tags": [],
+        "tier": 6,
+        "ft_score": 8.016824722290039,
+        "url": "https://wizardstower.myshopify.com/products/deck-protectors-dragon-shield-matte-dual-art-year-of-the-dragon-2024-100ct"
+      },
+      {
+        "product_id": 8250884882602,
+        "handle": "cat-dragon-009-dragon-006-double-sided-token-tc17",
+        "title": "Cat Dragon (009) // Dragon (006) Double-Sided Token (TC17)",
+        "display_name": "Cat Dragon // Dragon Double-Sided Token",
+        "card_name": "Cat Dragon // Dragon",
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/Cat-Dragon-_009_-Dragon-_006_-Double-Sided-Token.jpg?v=1760638186",
+        "price": 1.5,
+        "compare_at_price": null,
+        "price_condition": "NM",
+        "price_condition_variant_id": null,
+        "in_stock": true,
+        "total_inventory": 6,
+        "set_code": null,
+        "set_name": null,
+        "category": "Magic the Gathering Singles",
+        "subcategory": "Commander 2017",
+        "finish": null,
+        "collector_number": "009 // 006",
+        "variant_count": 4,
+        "default_variant_id": null,
+        "tags": [
+          {
+            "field": "mtg_mtg_finish",
+            "value": "Regular",
+            "style": "regular"
+          }
+        ],
+        "tier": 6,
+        "ft_score": 8.016824722290039,
+        "url": "https://wizardstower.myshopify.com/products/cat-dragon-009-dragon-006-double-sided-token-tc17",
+        "condition_variants": [
+          {
+            "variant_id": 47453705732266,
+            "code": "NM",
+            "price": 1.5,
+            "inventory": 4
+          },
+          {
+            "variant_id": 47453705765034,
+            "code": "SP",
+            "price": 1.38,
+            "inventory": 2
+          },
+          {
+            "variant_id": 47453705797802,
+            "code": "MP",
+            "price": 1.26,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47453705830570,
+            "code": "HP",
+            "price": 1.05,
+            "inventory": 0
+          }
+        ]
+      },
+      {
+        "product_id": 8250884948138,
+        "handle": "cat-dragon-009-dragon-007-double-sided-token-tc17",
+        "title": "Cat Dragon (009) // Dragon (007) Double-Sided Token (TC17)",
+        "display_name": "Cat Dragon // Dragon Double-Sided Token",
+        "card_name": "Cat Dragon // Dragon",
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/Cat-Dragon-_009_-Dragon-_007_-Double-Sided-Token.jpg?v=1760638183",
+        "price": 1.25,
+        "compare_at_price": null,
+        "price_condition": "NM",
+        "price_condition_variant_id": null,
+        "in_stock": false,
+        "total_inventory": 0,
+        "set_code": null,
+        "set_name": null,
+        "category": "Magic the Gathering Singles",
+        "subcategory": "Commander 2017",
+        "finish": null,
+        "collector_number": "009 // 007",
+        "variant_count": 4,
+        "default_variant_id": null,
+        "tags": [
+          {
+            "field": "mtg_mtg_finish",
+            "value": "Regular",
+            "style": "regular"
+          }
+        ],
+        "tier": 6,
+        "ft_score": 8.016824722290039,
+        "url": "https://wizardstower.myshopify.com/products/cat-dragon-009-dragon-007-double-sided-token-tc17",
+        "condition_variants": [
+          {
+            "variant_id": 47453705994410,
+            "code": "NM",
+            "price": 1.25,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47453706027178,
+            "code": "SP",
+            "price": 1.15,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47453706059946,
+            "code": "MP",
+            "price": 1.05,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47453706092714,
+            "code": "HP",
+            "price": 0.88,
+            "inventory": 0
+          }
+        ]
+      },
+      {
+        "product_id": 8250959200426,
+        "handle": "dragon-011-dragon-egg-010-double-sided-token-tc18",
+        "title": "Dragon (011) // Dragon Egg (010) Double-Sided Token (TC18)",
+        "display_name": "Dragon // Dragon Egg Double-Sided Token",
+        "card_name": "Dragon // Dragon Egg",
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/Dragon-_011_-Dragon-Egg-_010_-Double-Sided-Token.jpg?v=1760638185",
+        "price": 6,
+        "compare_at_price": null,
+        "price_condition": "NM",
+        "price_condition_variant_id": null,
+        "in_stock": true,
+        "total_inventory": 10,
+        "set_code": null,
+        "set_name": null,
+        "category": "Magic the Gathering Singles",
+        "subcategory": "Commander 2018",
+        "finish": null,
+        "collector_number": "011 // 010",
+        "variant_count": 4,
+        "default_variant_id": null,
+        "tags": [
+          {
+            "field": "mtg_mtg_finish",
+            "value": "Regular",
+            "style": "regular"
+          }
+        ],
+        "tier": 6,
+        "ft_score": 8.016824722290039,
+        "url": "https://wizardstower.myshopify.com/products/dragon-011-dragon-egg-010-double-sided-token-tc18",
+        "condition_variants": [
+          {
+            "variant_id": 47454011261098,
+            "code": "NM",
+            "price": 6,
+            "inventory": 5
+          },
+          {
+            "variant_id": 47454011293866,
+            "code": "SP",
+            "price": 5.52,
+            "inventory": 2
+          },
+          {
+            "variant_id": 47454011326634,
+            "code": "MP",
+            "price": 5.04,
+            "inventory": 3
+          },
+          {
+            "variant_id": 47454011359402,
+            "code": "HP",
+            "price": 4.2,
+            "inventory": 0
+          }
+        ]
+      },
+      {
+        "product_id": 8251736457386,
+        "handle": "dragon-006-dragon-spirit-009-double-sided-token-tafc",
+        "title": "Dragon (006) // Dragon Spirit (009) Double-Sided Token (TAFC)",
+        "display_name": "Dragon // Dragon Spirit Double-Sided Token",
+        "card_name": "Dragon // Dragon Spirit",
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/Dragon-_006_-Dragon-Spirit-_009_-Double-Sided-Token.jpg?v=1760638248",
+        "price": 1.25,
+        "compare_at_price": null,
+        "price_condition": "NM",
+        "price_condition_variant_id": null,
+        "in_stock": true,
+        "total_inventory": 9,
+        "set_code": null,
+        "set_name": null,
+        "category": "Magic the Gathering Singles",
+        "subcategory": "Adventures in the Forgotten Realms - Commander",
+        "finish": null,
+        "collector_number": "006 // 009",
+        "variant_count": 4,
+        "default_variant_id": null,
+        "tags": [
+          {
+            "field": "mtg_mtg_finish",
+            "value": "Regular",
+            "style": "regular"
+          }
+        ],
+        "tier": 6,
+        "ft_score": 8.016824722290039,
+        "url": "https://wizardstower.myshopify.com/products/dragon-006-dragon-spirit-009-double-sided-token-tafc",
+        "condition_variants": [
+          {
+            "variant_id": 47457168851114,
+            "code": "NM",
+            "price": 1.25,
+            "inventory": 6
+          },
+          {
+            "variant_id": 47457168883882,
+            "code": "SP",
+            "price": 1.15,
+            "inventory": 3
+          },
+          {
+            "variant_id": 47457168916650,
+            "code": "MP",
+            "price": 1.05,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47457168949418,
+            "code": "HP",
+            "price": 0.88,
+            "inventory": 0
+          }
+        ]
+      },
+      {
+        "product_id": 8251900854442,
+        "handle": "the-dragon-kami-reborn-dragon-kamis-egg-neo",
+        "title": "The Dragon-Kami Reborn // Dragon-Kami's Egg (NEO)",
+        "display_name": "The Dragon-Kami Reborn // Dragon-Kami's Egg",
+        "card_name": "The Dragon-Kami Reborn // Dragon-Kami's Egg",
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/The-Dragon-Kami-Reborn-_0181_-Dragon-Kami_s-Egg-_0181_b6829a57-6573-4fb2-8759-0a227b7d4a93.jpg?v=1761244861",
+        "price": 0.5,
+        "compare_at_price": null,
+        "price_condition": "NM",
+        "price_condition_variant_id": null,
+        "in_stock": true,
+        "total_inventory": 23,
+        "set_code": null,
+        "set_name": null,
+        "category": "Magic the Gathering Singles",
+        "subcategory": "Kamigawa Neon Dynasty",
+        "finish": null,
+        "collector_number": "0181",
+        "variant_count": 4,
+        "default_variant_id": null,
+        "tags": [
+          {
+            "field": "mtg_mtg_finish",
+            "value": "Regular",
+            "style": "regular"
+          }
+        ],
+        "tier": 6,
+        "ft_score": 8.016824722290039,
+        "url": "https://wizardstower.myshopify.com/products/the-dragon-kami-reborn-dragon-kamis-egg-neo",
+        "condition_variants": [
+          {
+            "variant_id": 47457827520682,
+            "code": "NM",
+            "price": 0.5,
+            "inventory": 23
+          },
+          {
+            "variant_id": 47457827553450,
+            "code": "SP",
+            "price": 0.46,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47457827586218,
+            "code": "MP",
+            "price": 0.42,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47457827618986,
+            "code": "HP",
+            "price": 0.35,
+            "inventory": 0
+          }
+        ]
+      },
+      {
+        "product_id": 8251901182122,
+        "handle": "the-dragon-kami-reborn-dragon-kamis-egg-neo-foil",
+        "title": "The Dragon-Kami Reborn // Dragon-Kami's Egg (NEO) - Foil",
+        "display_name": "The Dragon-Kami Reborn // Dragon-Kami's Egg",
+        "card_name": "The Dragon-Kami Reborn // Dragon-Kami's Egg",
+        "image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/The-Dragon-Kami-Reborn-_0181_-Dragon-Kami_s-Egg-_0181.jpg?v=1761244861",
+        "price": 0.75,
+        "compare_at_price": null,
+        "price_condition": "NM",
+        "price_condition_variant_id": null,
+        "in_stock": true,
+        "total_inventory": 7,
+        "set_code": null,
+        "set_name": null,
+        "category": "Magic the Gathering Singles",
+        "subcategory": "Kamigawa Neon Dynasty",
+        "finish": null,
+        "collector_number": "0181",
+        "variant_count": 4,
+        "default_variant_id": null,
+        "tags": [
+          {
+            "field": "mtg_mtg_finish",
+            "value": "Foil",
+            "style": "foil"
+          }
+        ],
+        "tier": 6,
+        "ft_score": 8.016824722290039,
+        "url": "https://wizardstower.myshopify.com/products/the-dragon-kami-reborn-dragon-kamis-egg-neo-foil",
+        "condition_variants": [
+          {
+            "variant_id": 47457828962474,
+            "code": "NM",
+            "price": 0.75,
+            "inventory": 7
+          },
+          {
+            "variant_id": 47457828995242,
+            "code": "SP",
+            "price": 0.69,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47457829028010,
+            "code": "MP",
+            "price": 0.63,
+            "inventory": 0
+          },
+          {
+            "variant_id": 47457829060778,
+            "code": "HP",
+            "price": 0.53,
+            "inventory": 0
+          }
+        ]
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "per_page": 24,
+      "total_results": 3646,
+      "total_pages": 152
+    },
+    "facets": [],
+    "query": "Fire Dragon"
+  },
+  "meta": {
+    "response_time_ms": 1381,
+    "cache_hit": false,
+    "timestamp": "2026-08-19T02:03:47+00:00",
+    "default_image_url": "https://cdn.shopify.com/s/files/1/0669/0553/8730/files/logo-placeholder.png?v=1782851340",
+    "timing": {
+      "results_ms": 902,
+      "count_ms": 475,
+      "total_ms": 1381
+    }
+  },
+  "error": null
+}

@@ -36,6 +36,10 @@ The values below are copied from the **currently configured** `Source` row for k
 
 Note on `pageSize`: the fixture above was originally captured with `pageSize/24` (per the recovered original README's refresh script), yielding 24 hits per page / 52 variant rows. The currently configured `base_search_url` uses `pageSize/100`, per the investigation doc's recommendation ("use `pageSize=100` for fewer requests if the API allows") — this is a deliberate config choice made after capture, not a mismatch to fix. If the fixture is refreshed (see below), it will naturally pick up `pageSize/100` and hit counts will differ from the numbers quoted above.
 
+## Term relevance filtering
+
+`JSONSearchParser.add_result` (`tracking/parsers.py`) now rejects any row whose title does not contain the search term as a contiguous, case/whitespace-normalized phrase, so `ShopifyParser` drops off-term rows automatically. This is a shared base-class behavior verified against a live `wt` vendor response (see `tracking/fixtures/html/wt/README.md`) — `f2f` itself has only been checked against this captured fixture and a synthetic test case, not a live smoke test, since `search_results_sample.json` here (query `Lightning Bolt`) happens to contain only full-phrase-match rows. If this fixture is refreshed, ideally include at least one off-term row for regression coverage.
+
 ## Pagination
 
 `ShopifyParser.next_page_url` (`tracking/parsers.py`) increments the `/page/{n}/` URL segment via regex (`re.subn(r"(/page/)(\d+)", ...)`) each time it's asked for a next page, and returns `None` once a page's `response.json()["hits"]["hits"]` comes back empty — i.e. pagination stops naturally when the API runs out of results, not on a hardcoded page count.

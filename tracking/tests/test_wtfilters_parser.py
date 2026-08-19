@@ -65,3 +65,44 @@ class WtFiltersParserTests(SimpleTestCase):
         self.assertEqual(row["price"], 1.75)
         self.assertEqual(row["instock"], 0)
         self.assertEqual(row["category"], "Modern Masters 2015")
+
+
+class WtFiltersParserRelevanceTests(SimpleTestCase):
+    """search-term-relevance-filter — a live wt search for "Fire Dragon" (an MTG
+    card) returns 24 rows on page 1, only one of which is the genuine item; the
+    rest include "Dragon Fire" (a different, reversed-name Lorcana card) and
+    unrelated "Dragon Shield" accessories. WtFiltersParser must reduce this to
+    exactly the genuine row."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        fixture_path = (
+            settings.BASE_DIR
+            / "tracking"
+            / "fixtures"
+            / "html"
+            / "wt"
+            / "search_results_fire_dragon.json"
+        )
+        cls.fixture = json.loads(fixture_path.read_text())
+
+    def _parse(self):
+        parser = WtFiltersParser(term="Fire Dragon")
+        parser.parse_response(_json_response(self.fixture))
+        return parser
+
+    def test_fixture_contains_off_term_noise(self):
+        # Sanity check on the fixture itself: the vendor really did return 24
+        # rows for this query, not just the one genuine match.
+        self.assertEqual(len(self.fixture["data"]["results"]), 24)
+
+    def test_reduces_to_the_genuine_result(self):
+        parser = self._parse()
+        self.assertEqual(len(parser.results), 1)
+        self.assertEqual(parser.results[0]["title"], "Fire Dragon (POR)")
+
+    def test_reordered_dragon_fire_rows_are_excluded(self):
+        parser = self._parse()
+        titles = [row["title"] for row in parser.results]
+        self.assertFalse(any("Dragon Fire" in title for title in titles))

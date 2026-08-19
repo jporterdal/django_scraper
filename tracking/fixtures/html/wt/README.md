@@ -9,6 +9,7 @@
 |------|---------|
 | `search_results_sample.json` | Captured wt-filters `POST /api/search` response for the test query above (24 results, page 1) |
 | `search_results_sample.html` | Synthetic static fragment documenting product card fields, rendering reference only |
+| `search_results_fire_dragon.json` | Captured `POST /api/search` response for `term="Fire Dragon"` (24 results, page 1; 3,646 vendor-reported total). Only 1 of the 24 rows is the genuine MTG card — the rest include four listings of `"Dragon Fire"` (a different card from a different game, Disney Lorcana) and unrelated `"Dragon Shield"` accessories. Used as the regression fixture for the `search-term-relevance` capability — see below. |
 
 ## Source form values
 
@@ -44,6 +45,14 @@ Note also that `base_search_url` here contains no `{term}` placeholder at all �
 ## Pagination
 
 `WtFiltersParser.next_page_body` (`tracking/parsers.py`) is currently a stub that always returns `None` — this parser does not yet support following additional pages, regardless of `Source.max_pages`. This lines up with the live `Source.max_pages` value of `1` (single page only). The investigation doc notes the query used here (`Lightning Bolt`) has 627 total results across 27 pages at `per_page=24`; raising `max_pages` for this vendor would require implementing body-based pagination (incrementing `context.page`) in `next_page_body` first.
+
+## Term relevance filtering
+
+`wt`'s search API does not do phrase-aware matching — it returns any row containing any of the query's words, in any order, anywhere in the title. `search_results_sample.json` (query `Lightning Bolt`) happens not to demonstrate this, because every real print of a two-word card name keeps both words adjacent; `search_results_fire_dragon.json` does demonstrate it, and is the fixture used to test for it.
+
+`JSONSearchParser.add_result` (`tracking/parsers.py`) now rejects any row whose title does not contain the search term as a contiguous, case/whitespace-normalized phrase, so `WtFiltersParser` (and every other `JSONSearchParser` subclass) drops these off-term rows automatically. This runs independent of, and prior to, the optional per-`ItemSource` `title_include_patterns`/`title_exclude_patterns`. See the `search-term-relevance` capability (`openspec/changes/search-term-relevance-filter/`) for the full design rationale and live evidence.
+
+If this fixture is refreshed, ideally keep (or re-capture) at least one query whose results include an off-term row, so this filtering behavior stays covered by a real vendor response rather than only synthetic test data.
 
 ## Rate-limit signals
 

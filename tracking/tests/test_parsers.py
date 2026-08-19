@@ -98,6 +98,69 @@ class ParserContractTests(SimpleTestCase):
 
         self.assertEqual(len(parser.results), 2)
 
+class JSONSearchParserRelevanceTests(SimpleTestCase):
+    """search-term-relevance-filter — JSONSearchParser.add_result rejects rows whose
+    title doesn't contain the search term as a contiguous phrase."""
+
+    def test_full_phrase_match_is_included(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(term="Fire Dragon")
+        parser.add_result(title="Fire Dragon (POR)", price=1, instock=True)
+
+        self.assertEqual(len(parser.results), 1)
+
+    def test_single_word_match_is_excluded(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(term="Lightning Bolt")
+        parser.add_result(title="Lightning Greaves (Foil)", price=1, instock=True)
+
+        self.assertEqual(parser.results, [])
+
+    def test_zero_word_match_is_excluded(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(term="Lightning Bolt")
+        parser.add_result(title="Counterspell (Masters 25)", price=1, instock=True)
+
+        self.assertEqual(parser.results, [])
+
+    def test_reordered_words_are_excluded(self):
+        """Fire Dragon / Dragon Fire — a different card (Lorcana), words present
+        but not contiguous, confirmed via a live wt vendor search."""
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(term="Fire Dragon")
+        parser.add_result(title="Dragon Fire (0130)", price=1, instock=True)
+
+        self.assertEqual(parser.results, [])
+
+    def test_matching_is_case_insensitive(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(term="lightning bolt")
+        parser.add_result(title="LIGHTNING BOLT (Revised Edition)", price=1, instock=True)
+
+        self.assertEqual(len(parser.results), 1)
+
+    def test_incidental_whitespace_in_term_is_tolerated(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(term="The Unbeatable Squirrel Girl ")
+        parser.add_result(title="The Unbeatable Squirrel Girl (MSH) - Foil", price=1, instock=True)
+
+        self.assertEqual(len(parser.results), 1)
+
+    def test_blank_term_disables_the_check(self):
+        from tracking.parsers import JSONSearchParser
+
+        parser = JSONSearchParser(term="")
+        parser.add_result(title="Anything At All", price=1, instock=True)
+
+        self.assertEqual(len(parser.results), 1)
+
+
 class ShopifyParserFixtureTests(SimpleTestCase):
     """Phase 2 Step 3 — ShopifyParser (F2F prod-indexer) against the real fixture."""
 
@@ -141,6 +204,52 @@ class ShopifyParserFixtureTests(SimpleTestCase):
             "expected at least one in-stock row from a variant with inventory > 0",
         )
 
+class ShopifyParserRelevanceTests(SimpleTestCase):
+    """search-term-relevance-filter — synthetic reordered-title case for the f2f
+    payload shape (illustrative; not live-smoke-tested the way wt was)."""
+
+    def test_reordered_title_variant_is_excluded(self):
+        from tracking.parsers import ShopifyParser
+
+        data = {
+            "hits": {
+                "hits": [
+                    {
+                        "_source": {
+                            "title": "Fire Dragon",
+                            "MTG_Set_Name": "Portal",
+                            "variants": [
+                                {
+                                    "price": 9.0,
+                                    "inventoryQuantity": 3,
+                                    "selectedOptions": [{"name": "Condition", "value": "NM"}],
+                                },
+                            ],
+                        },
+                    },
+                    {
+                        "_source": {
+                            "title": "Dragon Fire",
+                            "MTG_Set_Name": "Adventures in the Forgotten Realms",
+                            "variants": [
+                                {
+                                    "price": 1.0,
+                                    "inventoryQuantity": 5,
+                                    "selectedOptions": [{"name": "Condition", "value": "NM"}],
+                                },
+                            ],
+                        },
+                    },
+                ]
+            }
+        }
+        parser = ShopifyParser(term="Fire Dragon")
+        parser.parse_data(data)
+
+        self.assertEqual(len(parser.results), 1)
+        self.assertTrue(parser.results[0]["title"].startswith("Fire Dragon"))
+
+
 class StorepassParserFixtureTests(SimpleTestCase):
     """Phase 2 Step 4 — StorepassParser (HFX Storepass) against the real fixture."""
 
@@ -181,3 +290,37 @@ class StorepassParserFixtureTests(SimpleTestCase):
             oos_rows,
             "expected at least one out-of-stock row from a variant with inventory_quantity == 0",
         )
+
+
+class StorepassParserRelevanceTests(SimpleTestCase):
+    """search-term-relevance-filter — synthetic reordered-title case for the hfx
+    payload shape (illustrative; not live-smoke-tested the way wt was)."""
+
+    def test_reordered_title_product_is_excluded(self):
+        from tracking.parsers import StorepassParser
+
+        data = {
+            "products": [
+                {
+                    "display_name": "Fire Dragon [Portal]",
+                    "name": "Fire Dragon Portal",
+                    "productLineData": {"set": "Portal"},
+                    "variantInfo": [
+                        {"price": 9.0, "inventory_quantity": 2, "title": "Near Mint"},
+                    ],
+                },
+                {
+                    "display_name": "Dragon Fire [Forgotten Realms]",
+                    "name": "Dragon Fire Forgotten Realms",
+                    "productLineData": {"set": "Forgotten Realms"},
+                    "variantInfo": [
+                        {"price": 1.0, "inventory_quantity": 5, "title": "Near Mint"},
+                    ],
+                },
+            ]
+        }
+        parser = StorepassParser(term="Fire Dragon")
+        parser.parse_data(data)
+
+        self.assertEqual(len(parser.results), 1)
+        self.assertTrue(parser.results[0]["title"].startswith("Fire Dragon"))

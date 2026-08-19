@@ -31,6 +31,10 @@ The values below are copied from the **currently configured** `Source` row for k
 {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "Accept": "application/json", "Origin": "https://hfxgames.com", "Referer": "https://hfxgames.com/search?q=Lightning+Bolt"}
 ```
 
+## Term relevance filtering
+
+`JSONSearchParser.add_result` (`tracking/parsers.py`) now rejects any row whose title does not contain the search term as a contiguous, case/whitespace-normalized phrase, so `StorepassParser` drops off-term rows automatically. This is a shared base-class behavior verified against a live `wt` vendor response (see `tracking/fixtures/html/wt/README.md`) — `hfx` itself has only been checked against this captured fixture and a synthetic test case, not a live smoke test, since `search_results_sample.json` here (query `Lightning Bolt`) happens to contain only full-phrase-match rows. If this fixture is refreshed, ideally include at least one off-term row for regression coverage.
+
 ## Pagination
 
 `StorepassParser.next_page_url` (`tracking/parsers.py`) reads `current_page` and `pages` from the JSON response body. If both are present and `current_page < pages`, it clones the current request URL and sets/replaces its `page` query parameter to `current_page + 1`; otherwise it returns `None` and the fetch stops. The fixture's captured payload carries `current_page`/`pages` — Storepass documentation also references a `nextPageParameters` field, but that key is absent from the observed response and is not relied on.
