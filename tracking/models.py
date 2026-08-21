@@ -205,6 +205,17 @@ class SearchableItem(models.Model):
         ),
     )
 
+    metadata_provider_key = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name=(
+            "Metadata provider registry key selecting which external metadata "
+            "provider enriches this item (e.g. 'scryfall'); blank disables "
+            "metadata enrichment"
+        ),
+    )
+
 
 class Tag(models.Model):
     name = models.CharField(
@@ -262,6 +273,96 @@ class ItemSource(models.Model):
 
     class Meta:
         unique_together = [("item", "source")]
+
+
+class ItemMetadata(models.Model):
+    """Fetched/resolution state for one item's external metadata (see item-metadata-enrichment).
+
+    One-to-one with ``SearchableItem`` — separate from ``metadata_provider_key``
+    (operator configuration) for the same reason ``SearchResult``/``WebUpdate``
+    live apart from ``Source``: configuration and system-fetched state are
+    different concerns with different writers. ``payload`` is opaque to core
+    application code, interpreted only by the owning provider's ``to_display()``;
+    when ``status`` is ``needs_review`` it additionally holds a ``"candidates"``
+    list of ``{"external_id", "payload"}`` dicts for the disambiguation UI.
+    """
+
+    class Status(models.TextChoices):
+        UNFETCHED = "unfetched", "Unfetched"
+        PENDING = "pending", "Pending"
+        MATCHED = "matched", "Matched"
+        NEEDS_REVIEW = "needs_review", "Needs review"
+        NO_MATCH = "no_match", "No match"
+        ERROR = "error", "Error"
+
+    item = models.OneToOneField(
+        SearchableItem,
+        on_delete=models.CASCADE,
+        related_name="metadata",
+        verbose_name="Item this fetched metadata belongs to",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.UNFETCHED,
+        verbose_name="Current metadata resolution/fetch status",
+    )
+    external_id = models.CharField(
+        max_length=250,
+        blank=True,
+        default="",
+        verbose_name="Provider's resolved external identifier for the current match, if any",
+    )
+    pinned_external_id = models.CharField(
+        max_length=250,
+        blank=True,
+        default="",
+        verbose_name=(
+            "Operator-set manual override identifier — sticky and authoritative "
+            "once set; exempts the item from the text-change re-fetch trigger"
+        ),
+    )
+    payload = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Opaque raw data as returned by the provider",
+    )
+    fetched_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="When this record was last updated by a fetch",
+    )
+
+
+class MetadataFetchRequest(models.Model):
+    """Queue row backing the bounded-rate metadata refresh drain (see item-metadata-enrichment).
+
+    Populated only by ``tracking.metadata.request_metadata_refresh`` — the
+    single shared enqueue entrypoint — and drained by a periodic Huey task
+    (``tracking.tasks.drain_metadata_fetch_queue``) at a bounded rate per wake,
+    independent of the vendor rate-limit/budget subsystem.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        DONE = "done", "Done"
+
+    item = models.ForeignKey(
+        SearchableItem,
+        on_delete=models.CASCADE,
+        verbose_name="Item to (re-)fetch metadata for",
+    )
+    requested_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["status", "requested_at"]),
+        ]
 
 
 class WebUpdate(models.Model):

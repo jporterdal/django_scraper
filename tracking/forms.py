@@ -5,6 +5,8 @@ from django.db import transaction
 from django.db.models.functions import Lower
 from django.forms import BaseFormSet, formset_factory
 
+from .metadata import request_metadata_refresh, sync_metadata_after_save
+from .metadata_providers import PROVIDERS as metadata_provider_registry
 from .models import (
     ItemSource,
     SearchableItem,
@@ -97,6 +99,12 @@ PINNED_URL_HELP_TEXT = (
     "a search URL from the source template. Use for stubborn listings where search "
     "does not return the right result. The source's parser must be able to parse "
     "the pinned endpoint's response."
+)
+
+METADATA_PROVIDER_HELP_TEXT = (
+    "Optional external metadata provider (e.g. Scryfall) to enrich this item "
+    "with a thumbnail, description, and link. Leave as None to disable. "
+    "Changing this resets any previously fetched metadata and re-fetches."
 )
 
 
@@ -217,14 +225,24 @@ class SearchableItemForm(forms.ModelForm):
         label="Other expected category value(s)",
         help_text=EXPECTED_CATEGORY_MANUAL_HELP_TEXT,
     )
+    metadata_provider_key = forms.ChoiceField(
+        required=False,
+        label="Metadata provider",
+        help_text=METADATA_PROVIDER_HELP_TEXT,
+    )
 
     class Meta:
         model = SearchableItem
-        fields = ["text", "priority", "active", "tags"]
+        fields = ["text", "priority", "active", "tags", "metadata_provider_key"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         _apply_bootstrap_form_classes(self)
+
+        self.fields["metadata_provider_key"].choices = [
+            ("", "None"),
+            *((key, key) for key in metadata_provider_registry),
+        ]
 
         instance = getattr(self, "instance", None)
         product_line_choices = _suggestion_choices(instance, "product_line")
@@ -254,9 +272,14 @@ class SearchableItemForm(forms.ModelForm):
             self.cleaned_data.get("expected_category_suggestions"),
             self.cleaned_data.get("expected_category_manual"),
         )
+        provider_changed = "metadata_provider_key" in self.changed_data
+        text_changed = "text" in self.changed_data
         if commit:
             instance.save()
             self.save_m2m()
+            sync_metadata_after_save(
+                instance, provider_changed=provider_changed, text_changed=text_changed
+            )
         return instance
 
 
@@ -264,7 +287,7 @@ class SearchableItemCreateForm(SearchableItemForm):
     """Create view: search text plus the optional expected product-line/category."""
 
     class Meta(SearchableItemForm.Meta):
-        fields = ["text"]
+        fields = ["text", "metadata_provider_key"]
 
 
 class ItemSourceForm(forms.ModelForm):
@@ -486,6 +509,11 @@ class BulkAddItemsForm(forms.Form):
         initial=False,
         label="Add terms even if entries exist with identical text (leave unchecked to verify no duplication of text)",
     )
+    metadata_provider_key = forms.ChoiceField(
+        required=False,
+        label="Metadata provider",
+        help_text=METADATA_PROVIDER_HELP_TEXT,
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -498,6 +526,10 @@ class BulkAddItemsForm(forms.Form):
             for pk, name in Tag.objects.order_by("name").values_list("pk", "name")
         )
         self.fields["tag"].choices = tag_choices
+        self.fields["metadata_provider_key"].choices = [
+            ("", "None"),
+            *((key, key) for key in metadata_provider_registry),
+        ]
         _apply_bootstrap_form_classes(self)
 
     def clean_tag(self):
@@ -594,16 +626,20 @@ ItemSourceFormSet = formset_factory(
 )
 
 
-def create_items_from_bulk_add(terms, tag, priority, source_forms):
+def create_items_from_bulk_add(terms, tag, priority, source_forms, metadata_provider_key=""):
     """Atomically create SearchableItems (and optional ItemSources) from bulk add.
 
     ``source_forms`` should be validated ``ItemSourceForm`` instances. Empty or
-    deleted rows are skipped. Returns the list of created ``SearchableItem``s.
+    deleted rows are skipped. A non-blank ``metadata_provider_key`` is applied
+    to every created item and requests a metadata refresh for each (task 3.4).
+    Returns the list of created ``SearchableItem``s.
     """
     created = []
     with transaction.atomic():
         for term in terms:
-            item = SearchableItem.objects.create(text=term, priority=priority)
+            item = SearchableItem.objects.create(
+                text=term, priority=priority, metadata_provider_key=metadata_provider_key
+            )
             if tag is not None:
                 item.tags.add(tag)
             for form in source_forms:
@@ -621,5 +657,7 @@ def create_items_from_bulk_add(terms, tag, priority, source_forms):
                     title_include_patterns=data.get("title_include_patterns") or [],
                     title_exclude_patterns=data.get("title_exclude_patterns") or [],
                 )
+            if metadata_provider_key:
+                request_metadata_refresh(item)
             created.append(item)
     return created

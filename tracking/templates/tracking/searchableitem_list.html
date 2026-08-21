@@ -97,6 +97,11 @@
                                     {% endif %}
                                 </td>
                                 <td>
+                                    {% if item.metadata_thumbnail_url %}
+                                        <img src="{{ item.metadata_thumbnail_url }}" alt=""
+                                             style="max-height: 100px; max-width: 100px; object-fit: contain;"
+                                             class="rounded me-2">
+                                    {% endif %}
                                     {{ item.text }}
                                     {% if not item.active %}
                                         <span class="badge text-bg-secondary ms-1">inactive</span>

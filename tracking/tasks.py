@@ -19,7 +19,17 @@ from huey import crontab
 from huey.contrib.djhuey import periodic_task, task
 
 from .locks import get_unit_lock, lock_ttl_for_eta, unit_lock_key
-from .models import FetchJob, ItemSource, SearchableItem, UpdateSchedule, WebUpdate
+from .metadata_providers import PROVIDERS as metadata_provider_registry
+from .metadata_providers import ResolutionStatus
+from .models import (
+    FetchJob,
+    ItemMetadata,
+    ItemSource,
+    MetadataFetchRequest,
+    SearchableItem,
+    UpdateSchedule,
+    WebUpdate,
+)
 from .ratelimit import RateLimitPolicy
 
 logger = logging.getLogger(__name__)
@@ -328,3 +338,126 @@ def dispatch_scheduled_updates():
     if dispatched:
         logger.info("Dispatched %d scheduled update(s)", len(dispatched))
     return len(dispatched)
+
+
+# ---------------------------------------------------------------------------
+# item-metadata-enrichment — bounded-rate metadata refresh queue.
+#
+# ``request_metadata_refresh`` (tracking/metadata.py) is the only path that
+# creates ``MetadataFetchRequest`` rows; ``drain_metadata_fetch_queue`` wakes
+# on the same once-a-minute cadence as ``dispatch_scheduled_updates`` and
+# dispatches up to ``METADATA_DRAIN_BATCH_SIZE`` pending requests per wake,
+# independent of the vendor rate-limit/budget subsystem (see design.md
+# decision 6). Deliberately separate from the price-fetch fan-out above: a
+# failed metadata fetch is marked ``error`` and stops (decision 7), no
+# defer/requeue/backoff.
+# ---------------------------------------------------------------------------
+
+METADATA_DRAIN_BATCH_SIZE = 10
+
+
+@task()
+def fetch_metadata(fetch_request_id):
+    """Resolve metadata for one queued ``MetadataFetchRequest`` (task 4.1).
+
+    Uses the item's ``pinned_external_id`` (a candidate pick or manual entry)
+    via the provider's ``fetch_by_id`` when set, otherwise runs the provider's
+    ``resolve()`` search. Any exception — network error, bad response, unknown
+    provider key — terminalizes the item's ``ItemMetadata`` as ``error`` with
+    no automatic retry; the request row is always marked done so it is not
+    redelivered.
+    """
+    try:
+        fetch_request = MetadataFetchRequest.objects.select_related("item").get(
+            pk=fetch_request_id
+        )
+    except MetadataFetchRequest.DoesNotExist:
+        logger.error("fetch_metadata: MetadataFetchRequest %s does not exist", fetch_request_id)
+        return
+
+    item = fetch_request.item
+    item_metadata, _ = ItemMetadata.objects.get_or_create(item=item)
+
+    try:
+        provider_cls = metadata_provider_registry.get(item.metadata_provider_key)
+        if provider_cls is None:
+            raise ValueError(
+                f"Unregistered metadata provider key: {item.metadata_provider_key!r}"
+            )
+        provider = provider_cls()
+
+        if item_metadata.pinned_external_id:
+            payload = provider.fetch_by_id(item_metadata.pinned_external_id)
+            if payload is None:
+                item_metadata.status = ItemMetadata.Status.NO_MATCH
+                item_metadata.external_id = ""
+                item_metadata.payload = {}
+            else:
+                item_metadata.status = ItemMetadata.Status.MATCHED
+                item_metadata.external_id = item_metadata.pinned_external_id
+                item_metadata.payload = payload
+        else:
+            result = provider.resolve(item)
+            if result.status == ResolutionStatus.MATCHED:
+                item_metadata.status = ItemMetadata.Status.MATCHED
+                item_metadata.external_id = result.external_id
+                item_metadata.payload = result.payload
+            elif result.status == ResolutionStatus.NEEDS_REVIEW:
+                item_metadata.status = ItemMetadata.Status.NEEDS_REVIEW
+                item_metadata.external_id = ""
+                item_metadata.payload = {
+                    "candidates": [
+                        {"external_id": c.external_id, "payload": c.payload}
+                        for c in result.candidates
+                    ]
+                }
+            else:
+                item_metadata.status = ItemMetadata.Status.NO_MATCH
+                item_metadata.external_id = ""
+                item_metadata.payload = {}
+
+        item_metadata.fetched_at = timezone.now()
+        item_metadata.save(
+            update_fields=["status", "external_id", "payload", "fetched_at"]
+        )
+    except Exception:
+        logger.exception(
+            "fetch_metadata failed for item %s (fetch_request=%s)",
+            item.pk,
+            fetch_request_id,
+        )
+        item_metadata.status = ItemMetadata.Status.ERROR
+        item_metadata.save(update_fields=["status"])
+    finally:
+        fetch_request.status = MetadataFetchRequest.Status.DONE
+        fetch_request.save(update_fields=["status"])
+
+
+def drain_pending_metadata_fetch_requests():
+    """Dispatch up to ``METADATA_DRAIN_BATCH_SIZE`` pending metadata fetches.
+
+    Plain (undecorated) function so it is directly unit-testable, mirroring
+    ``dispatch_due_schedules`` vs. the ``@periodic_task`` wrapper below. Any
+    remainder beyond the batch size stays queued for the next wake. Returns
+    the number of requests dispatched.
+    """
+    fetch_request_ids = list(
+        MetadataFetchRequest.objects.filter(status=MetadataFetchRequest.Status.PENDING)
+        .order_by("requested_at", "pk")
+        .values_list("pk", flat=True)[:METADATA_DRAIN_BATCH_SIZE]
+    )
+    for fetch_request_id in fetch_request_ids:
+        fetch_metadata(fetch_request_id)
+    if fetch_request_ids:
+        logger.info("Drained %d metadata fetch request(s)", len(fetch_request_ids))
+    return len(fetch_request_ids)
+
+
+@periodic_task(crontab(minute="*"))
+def drain_metadata_fetch_queue():
+    """Huey periodic task: wakes once a minute and drains the metadata fetch queue.
+
+    Mirrors ``dispatch_scheduled_updates``'s cadence; only runs inside the Huey
+    consumer (immediate mode has no scheduler).
+    """
+    return drain_pending_metadata_fetch_requests()

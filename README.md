@@ -54,6 +54,53 @@ Only a running `run_huey` consumer dispatches periodic schedules; the web proces
 
 **Schedules** (`/schedules/`): named recurring scrapes with preset frequencies (Hourly, Twice Daily, Daily) and an anchor time in **America/Halifax**. Optional tag scope limits a run to active items with that tag; no tag means all active items. The dispatcher wakes each minute and fires due schedules once per interval (no backfill of missed windows). Outcomes appear in Scrape History like manual updates.
 
+## Item metadata enrichment
+
+An item can optionally be enriched with external reference metadata (image, description, link) from a **metadata provider** — e.g. a Magic: the Gathering card's art and text pulled from Scryfall. This is separate from vendor price search (`Source`/`ItemSource`) and purely display-only: it never affects search-relevance filtering.
+
+- **Registry**: providers are a pure code registry (`tracking/metadata_providers.py::PROVIDERS`), the same pattern as the parser registry (`tracking/parsers.py::sources`) — no database table, no per-deployment configuration. An item's `metadata_provider_key` selects a registered key (or blank, to disable enrichment).
+- **Fetched state**: lives on a separate `ItemMetadata` row (one-to-one with the item) — `status` (`unfetched`/`pending`/`matched`/`needs_review`/`no_match`/`error`), `external_id`, an operator `pinned_external_id` override, and the provider's opaque `payload`.
+- **Display contract**: every provider maps its raw `payload` to exactly three fields — `thumbnail_url`, `description`, `external_url` — via `to_display(payload)`, computed at render time. Generic templates (item detail page, item list thumbnail) render only these three fields; provider-specific data (e.g. mana cost, rarity) stays inert inside `payload`.
+- **Refresh queue**: refresh requests are enqueued through the single shared entrypoint `tracking/metadata.py::request_metadata_refresh` and drained at a bounded rate (`tracking/tasks.py::drain_metadata_fetch_queue`, ~once/minute, small batch per wake) — independent of the vendor rate-limit/budget subsystem (`tracking/ratelimit/`), which paces a different problem (live vendor-reported quota).
+- **Failure handling**: a failed fetch sets `status=error` with no automatic retry. Recovery is the "Retry metadata fetch" action on the item detail page, a `text` edit (if unpinned), or a provider change.
+
+### Seeing fetches actually happen in dev
+
+Setting a provider on an item only *enqueues* a `MetadataFetchRequest` — nothing drains that queue except the periodic `drain_metadata_fetch_queue` task, and (like `dispatch_scheduled_updates`/schedules — see "Background updates" above) that task only fires inside a live `python manage.py run_huey` consumer process. Running `runserver` alone (with no separate `run_huey` process) leaves every request sitting at `unfetched`/`pending` forever — no error, just silent inertness. The item detail page shows a warning in this situation.
+
+Unlike schedules, though, the fix under the dev/test default is **not** "start `run_huey` alongside `runserver`" — `run_huey` genuinely requires **both** `HUEY_IMMEDIATE=False` **and** a reachable Redis (`REDIS_URL`) to start at all; it is not an either/or, and neither is optional. Under the dev/test default (`HUEY_IMMEDIATE=True`, i.e. `DEBUG=True`), `run_huey` refuses to boot (`ConfigurationError`) regardless of Redis — immediate mode only governs how an already-dispatched task executes (inline vs. queued), not whether the consumer's scheduler thread runs.
+
+| `HUEY_IMMEDIATE` | `runserver` alone | `runserver` + `run_huey` |
+|---|---|---|
+| `True` (dev/test default) | Requests enqueue; nothing drains them | `run_huey` refuses to start at all |
+| `False` (prod / explicit) | Same — stuck forever | Works, but requires a real `REDIS_URL` |
+
+For dev-mode spot checks, use the management command instead — it calls the same drain logic directly, in-process, with no Redis and no second process:
+
+```bash
+python manage.py drain_metadata_queue
+```
+
+This is a one-off escape hatch, not a substitute for `run_huey` in production — it drains whatever is pending at the moment you run it and does not run on any cadence. A synchronous fallback wired directly into the UI actions (mirroring how "Update Selected" calls `dispatch_fan_out` inline for price updates) was considered and rejected for now: expected dev-mode testing is occasional spot checks, not a routine workflow, so a manual command invocation is proportionate, and it avoids reintroducing a foreground-blocking-request path into the item create/edit views.
+
+### Adding a new provider
+
+1. In `tracking/metadata_providers.py`, subclass `MetadataProvider` and implement:
+   - `resolve(item) -> ResolutionResult` — search/match the item, returning `MATCHED` (single confident match), `NEEDS_REVIEW` (candidates), or `NO_MATCH`.
+   - `to_display(payload) -> {thumbnail_url, description, external_url}` — a pure mapping from your provider's raw shape to the generic three-slot contract.
+   - `fetch_by_id(external_id)` — fetch a known identifier directly (used for a pinned/manually-entered ID).
+2. Register it in the `PROVIDERS` dict: `PROVIDERS = {"scryfall": ScryfallProvider, "your_key": YourProvider}`. The key immediately becomes a selectable choice on the item create/edit/bulk-add forms — no migration needed.
+3. Send a descriptive `User-Agent` on any outbound requests, per your provider's API guidelines (see `ScryfallProvider` for the pattern).
+
+### Deferred / future directions
+
+Explicitly out of scope for the initial implementation, noted here for when the need actually arises:
+
+- A periodic re-sweep re-fetching metadata for already-`matched` items (only creation/update/manual-retry populate the queue today).
+- Bulk "refresh all" / "refresh errored" actions across many existing items.
+- General bulk-editing of any field across multiple existing items — the `item_ids` checkbox selection and `mode=selected` plumbing already on `view_terms` (see `UpdateFromWebView`) is reusable groundwork for this.
+- A second registered provider — only the registry seam is proven out so far; a real second provider may reveal the three-slot display contract needs widening.
+
 ## PostgreSQL
 
 Database backend is selected by `DATABASE_URL`:
