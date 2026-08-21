@@ -6,8 +6,10 @@ function directly executes it inline — consistent with the rest of the suite
 (see test_schedule.py).
 """
 
+from io import StringIO
 from unittest.mock import MagicMock, patch
 
+from django.core.management import call_command
 from django.db import connection
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
@@ -545,6 +547,43 @@ class DrainMetadataFetchQueueTests(TestCase):
             self.assertEqual(item_metadata.status, ItemMetadata.Status.MATCHED)
             self.assertEqual(item_metadata.external_id, "manual-id-1")
             self.assertEqual(item_metadata.payload, {"name": "manual-id-1"})
+
+
+# ---------------------------------------------------------------------------
+# 10.4 — drain_metadata_queue management command
+# ---------------------------------------------------------------------------
+
+
+class DrainMetadataQueueCommandTests(TestCase):
+    def test_command_processes_pending_requests(self):
+        with patch.dict("tracking.metadata_providers.PROVIDERS", {"stub": _StubProvider}):
+            item = make_item(metadata_provider_key="stub")
+            request_metadata_refresh(item)
+            self.assertEqual(
+                MetadataFetchRequest.objects.filter(
+                    status=MetadataFetchRequest.Status.PENDING
+                ).count(),
+                1,
+            )
+
+            out = StringIO()
+            call_command("drain_metadata_queue", stdout=out)
+
+            self.assertEqual(
+                MetadataFetchRequest.objects.filter(
+                    status=MetadataFetchRequest.Status.PENDING
+                ).count(),
+                0,
+            )
+            item.metadata.refresh_from_db()
+            self.assertEqual(item.metadata.status, ItemMetadata.Status.MATCHED)
+            self.assertIn("Drained 1 metadata fetch request", out.getvalue())
+
+    def test_command_with_nothing_pending_runs_cleanly(self):
+        out = StringIO()
+        call_command("drain_metadata_queue", stdout=out)
+
+        self.assertIn("No pending metadata fetch requests", out.getvalue())
 
 
 # ---------------------------------------------------------------------------

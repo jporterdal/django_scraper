@@ -66,14 +66,22 @@ An item can optionally be enriched with external reference metadata (image, desc
 
 ### Seeing fetches actually happen in dev
 
-Setting a provider on an item only *enqueues* a `MetadataFetchRequest` — nothing drains that queue except the periodic `drain_metadata_fetch_queue` task, and (like `dispatch_scheduled_updates`/schedules — see "Background updates" above) that task only fires inside a live `python manage.py run_huey` consumer process. Running `runserver` alone (with no separate `run_huey` process) leaves every request sitting at `unfetched`/`pending` forever — no error, just silent inertness. The item detail page shows a warning in this situation, but the fix is the same as for schedules: start `run_huey` alongside `runserver`.
+Setting a provider on an item only *enqueues* a `MetadataFetchRequest` — nothing drains that queue except the periodic `drain_metadata_fetch_queue` task, and (like `dispatch_scheduled_updates`/schedules — see "Background updates" above) that task only fires inside a live `python manage.py run_huey` consumer process. Running `runserver` alone (with no separate `run_huey` process) leaves every request sitting at `unfetched`/`pending` forever — no error, just silent inertness. The item detail page shows a warning in this situation.
 
-The one thing that's *not* the blocker here, and is easy to assume otherwise: **Redis is not required** for `run_huey` to drive this queue under the dev/test default (`HUEY_IMMEDIATE=True`, i.e. `DEBUG=True`). Huey transparently swaps in an in-memory broker whenever immediate mode is on, so `run_huey` starts and its scheduler fires periodic tasks synchronously in-process with no Redis connection at all. Redis only becomes required once `HUEY_IMMEDIATE=False` (real production mode) — that's when `run_huey` is pulling real queued work off Redis instead of executing inline.
+Unlike schedules, though, the fix under the dev/test default is **not** "start `run_huey` alongside `runserver`" — `run_huey` genuinely requires **both** `HUEY_IMMEDIATE=False` **and** a reachable Redis (`REDIS_URL`) to start at all; it is not an either/or, and neither is optional. Under the dev/test default (`HUEY_IMMEDIATE=True`, i.e. `DEBUG=True`), `run_huey` refuses to boot (`ConfigurationError`) regardless of Redis — immediate mode only governs how an already-dispatched task executes (inline vs. queued), not whether the consumer's scheduler thread runs.
 
 | `HUEY_IMMEDIATE` | `runserver` alone | `runserver` + `run_huey` |
 |---|---|---|
-| `True` (dev/test default) | Requests enqueue; nothing ever drains them | Works — **no Redis needed** |
-| `False` (prod / explicit) | Same — stuck forever | Requires a real `REDIS_URL` |
+| `True` (dev/test default) | Requests enqueue; nothing drains them | `run_huey` refuses to start at all |
+| `False` (prod / explicit) | Same — stuck forever | Works, but requires a real `REDIS_URL` |
+
+For dev-mode spot checks, use the management command instead — it calls the same drain logic directly, in-process, with no Redis and no second process:
+
+```bash
+python manage.py drain_metadata_queue
+```
+
+This is a one-off escape hatch, not a substitute for `run_huey` in production — it drains whatever is pending at the moment you run it and does not run on any cadence. A synchronous fallback wired directly into the UI actions (mirroring how "Update Selected" calls `dispatch_fan_out` inline for price updates) was considered and rejected for now: expected dev-mode testing is occasional spot checks, not a routine workflow, so a manual command invocation is proportionate, and it avoids reintroducing a foreground-blocking-request path into the item create/edit views.
 
 ### Adding a new provider
 
