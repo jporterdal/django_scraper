@@ -65,4 +65,7 @@
 ## 10. Dev-mode visibility for the periodic-drain consumer dependency
 
 - [x] 10.1 Add a "metadata fetch may not be processed" warning (reuse or generalize `schedules_may_not_fire()` — same underlying condition, see design.md decision 9) shown on the item detail page when the item's `ItemMetadata.status` is `unfetched`/`pending`
-- [x] 10.2 Update README's metadata-enrichment section with the dev/prod consumer-dependency matrix: a live `run_huey` process (not Redis) is what's required to see fetches processed under the default `HUEY_IMMEDIATE=True`; Redis only becomes required once `HUEY_IMMEDIATE=False`
+- [x] 10.2 ~~Update README's metadata-enrichment section with the dev/prod consumer-dependency matrix~~ — superseded by 10.5: the "Redis not required in dev" claim was verified wrong (`run_huey` cannot start at all under `HUEY_IMMEDIATE=True`, confirmed by actually running it — see design.md decision 9's correction)
+- [ ] 10.3 Add a `drain_metadata_queue` management command wrapping the existing plain `drain_pending_metadata_fetch_requests()` (`tracking/tasks.py`) — runs under `HUEY_IMMEDIATE=True` with no Redis/second process needed
+- [ ] 10.4 Test the management command (calling it processes pending requests; runs cleanly with none pending)
+- [ ] 10.5 Correct README's metadata-enrichment section: `run_huey` genuinely requires both `HUEY_IMMEDIATE=False` *and* a reachable Redis (not an either/or, and not available under the dev-mode default at all); document the `drain_metadata_queue` management command as the straightforward dev-mode alternative; note that a synchronous UI fallback (mirroring "Update Selected") was considered and rejected for now — see design.md decision 10
