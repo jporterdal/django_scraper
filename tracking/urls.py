@@ -11,6 +11,17 @@ urlpatterns = [
     path("item/<int:pk>/", views.SearchableItemDetailView.as_view(), name="item_detail"),
     path("item/<int:pk>/export.csv", views.export_item_csv, name="export_item_csv"),
     path("item/<int:pk>/export.json", views.export_item_json, name="export_item_json"),
+    path("item/<int:pk>/metadata/retry/", views.MetadataRetryView.as_view(), name="metadata_retry"),
+    path(
+        "item/<int:pk>/metadata/select_candidate/",
+        views.MetadataSelectCandidateView.as_view(),
+        name="metadata_select_candidate",
+    ),
+    path(
+        "item/<int:pk>/metadata/set_external_id/",
+        views.MetadataSetExternalIdView.as_view(),
+        name="metadata_set_external_id",
+    ),
     path("tags/", views.TagListView.as_view(), name="view_tags"),
     path("tags/add/", views.TagCreateView.as_view(), name="add_tag"),
     path("tags/<int:pk>/edit/", views.TagUpdateView.as_view(), name="edit_tag"),

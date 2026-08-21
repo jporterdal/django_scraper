@@ -140,6 +140,17 @@ The item detail page SHALL offer an explicit action to retry a metadata fetch, a
 - **WHEN** an item's `ItemMetadata.status` is `error` and the operator triggers the retry action
 - **THEN** a metadata refresh request is enqueued for that item through the shared entrypoint
 
+### Requirement: The item detail page warns when a pending fetch may not be processed
+When an item's `ItemMetadata.status` is `unfetched` or `pending` and server settings do not guarantee a live background consumer is processing the refresh queue, the item detail page SHALL display a warning that the fetch may not complete without a separate background worker process running.
+
+#### Scenario: Warning shown under default dev/test settings
+- **WHEN** an item has a pending or unfetched metadata fetch and the server is running under settings equivalent to the default dev/test configuration (no live consumer guaranteed)
+- **THEN** the item detail page displays a warning that metadata may not be fetched without a separate background worker process running
+
+#### Scenario: Warning hidden when fetches are expected to be processed
+- **WHEN** an item has a pending or unfetched metadata fetch and the server is running under settings that do not trigger the "may not be processed" heuristic
+- **THEN** the item detail page does not display the warning
+
 ### Requirement: The item list page displays a thumbnail without introducing per-row queries
 The item list page SHALL display each item's `thumbnail_url` (when available from a `matched` `ItemMetadata`) inline next to its search-term text, sized to fit reasonably within the table. Retrieving this data for the full list SHALL use eager loading (e.g. a single joined/select-related query) rather than one query per item.
 

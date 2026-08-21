@@ -77,12 +77,23 @@ Unlike `FetchJob`/`fetch_one`'s bounded retry-with-backoff for price fetches, a 
 
 `SearchableListView.get_queryset` already eager-loads related data via `prefetch_related("tags")` and multiple `Subquery` annotations specifically to keep the item table to a bounded query count regardless of row count. The new thumbnail column must follow the same discipline — `select_related` on the one-to-one `ItemMetadata` — not a per-row lookup.
 
+### 9. Dev-mode visibility: warn about the consumer dependency instead of silently masking it
+
+The periodic drain (decision 6) inherits the exact same characteristic as `UpdateSchedule`/`dispatch_scheduled_updates`: `@periodic_task` only fires inside a live `python manage.py run_huey` consumer process. `HUEY["immediate"]` only governs what happens *once* a task is dispatched (synchronous, in-process execution instead of a Redis round-trip) — it does not make Huey's scheduler thread run inside `runserver`. That scheduler thread (`huey.consumer.Scheduler.loop()`) exists only inside a `Consumer` object, which only `run_huey` constructs.
+
+Verified directly against huey's source rather than assumed: `Huey.create_storage()` swaps in a pure in-memory broker whenever `immediate=True` (the `immediate_use_memory=True` default, which this project's `HUEY` settings dict does not override) — so **Redis is not required for `run_huey` to drive this queue under the dev/test default**; only a live consumer *process* is. Redis only becomes load-bearing once `HUEY_IMMEDIATE=False` (real production mode), where `enqueue()` actually calls `self.storage.enqueue()` against it.
+
+Unlike `UpdateSchedule`, this queue has no synchronous manual-trigger fallback — price updates have "Update Selected", which calls `dispatch_fan_out` directly from the view, bypassing the periodic scheduler entirely. Metadata refresh has only the periodic path: `request_metadata_refresh` (and the manual "Retry" action, which just calls it) only enqueues a `MetadataFetchRequest`; nothing drains it outside `drain_metadata_fetch_queue`. So without a signal, a pending request can sit forever with no visible indication anything is wrong — worse than schedules, which at least warn.
+
+Mirroring `schedules_may_not_fire()` (same underlying condition: immediate mode or no configured Redis), the item detail page shows a warning when an item's fetch is `unfetched`/`pending`. This is a heuristic, not a certain diagnosis — Django's request-serving process has no way to know whether a separate `run_huey` process happens to be alive — so it can both false-positive (a worker is in fact running) and, more importantly, can't by itself fix the dev-mode trap; the README must spell out that `run_huey` (not Redis) is the actual requirement in dev.
+
 ## Risks / Trade-offs
 
 - **[Risk]** Scryfall's search-term-based auto-match is a heuristic; a same-named-but-different-card mismatch could silently display wrong art. → Mitigation: `pinned_external_id` gives the operator a permanent, explicit correction path once noticed; this is display-only, so the blast radius of a wrong match is cosmetic, not data-corrupting.
 - **[Risk]** No automatic retry means a transient Scryfall outage leaves items stuck at `status=error` until an operator notices and clicks retry. → Mitigation: acceptable for v1 given low stakes; the documented future direction (bulk "refresh errored" action) is the natural fix once this friction is actually felt.
 - **[Risk]** A fixed three-slot display contract may feel restrictive if Scryfall's rich data (mana cost, set symbol, price) turns out to be wanted later. → Mitigation: deliberate — `payload` retains everything; widening the contract is a future, additive change, not a rewrite, since nothing downstream depends on the contract being exactly three fields forever.
 - **[Trade-off]** Computing `to_display()` at render time instead of storing denormalized columns adds a small per-render cost (negligible: pure function over already-fetched JSON, no extra queries) in exchange for never having stale display data after a mapping-logic change.
+- **[Risk]** Without a live `run_huey` consumer, `MetadataFetchRequest` rows silently accumulate as `pending` forever with no error surfaced anywhere — indistinguishable from "queue is just slow." → Mitigation: a `schedules_may_not_fire()`-style warning banner on the item detail page (decision 9), plus explicit README guidance that a separate `run_huey` process — not Redis — is what's actually required to see fetches processed in dev.
 
 ## Migration Plan
 
@@ -95,3 +106,4 @@ Unlike `FetchJob`/`fetch_one`'s bounded retry-with-backoff for price fetches, a 
 
 - Exact periodic-task cadence and per-tick batch size are placeholders (~once/minute, small batch) pending real usage — tune once live.
 - Whether a second provider ever gets built, and whether it stays comfortably within the three-slot contract, remains unknown; this design commits only to the registry seam existing, not to a second implementation.
+- The decision-9 warning heuristic can't distinguish "no consumer is running" from "a consumer is running just fine, but immediate mode/no-Redis happens to also be true" — it will occasionally warn when things are actually fine. Whether to generalize/reuse `schedules_may_not_fire()` as-is (same condition) or extract a differently-named shared helper is an implementation-time call, not a design one — the condition itself is settled.

@@ -67,6 +67,17 @@
                     {% endif %}
                 </div>
 
+                <div class="mb-3">
+                    <label for="{{ form.metadata_provider_key.id_for_label }}" class="form-label">{{ form.metadata_provider_key.label }}</label>
+                    {{ form.metadata_provider_key }}
+                    {% if form.metadata_provider_key.help_text %}
+                        <div class="form-text">{{ form.metadata_provider_key.help_text }}</div>
+                    {% endif %}
+                    {% if form.metadata_provider_key.errors %}
+                        <div class="text-danger small">{{ form.metadata_provider_key.errors }}</div>
+                    {% endif %}
+                </div>
+
                 <div class="mb-3 form-check">
                     {{ form.allow_duplicate_text }}
                     <label for="{{ form.allow_duplicate_text.id_for_label }}" class="form-check-label">

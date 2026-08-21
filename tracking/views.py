@@ -20,8 +20,11 @@ from .forms import (
     create_items_from_bulk_add,
 )
 from .matching import result_matches_item_source
+from .metadata import get_item_metadata, request_metadata_refresh
+from .metadata_providers import PROVIDERS as metadata_provider_registry
 from .models import (
     FetchJob,
+    ItemMetadata,
     ItemSource,
     SearchableItem,
     SearchResult,
@@ -336,6 +339,7 @@ class BulkAddItemsView(View):
                 tag=form.cleaned_data["tag"],
                 priority=form.cleaned_data["priority"],
                 source_forms=formset.forms,
+                metadata_provider_key=form.cleaned_data["metadata_provider_key"],
             )
             count = len(items)
             messages.success(
@@ -439,6 +443,15 @@ class SearchableListView(ListView):
                         }
                     )
 
+        for item in object_list:
+            item.metadata_thumbnail_url = ""
+            item_metadata = get_item_metadata(item)
+            if item_metadata is not None and item_metadata.status == ItemMetadata.Status.MATCHED:
+                provider_cls = metadata_provider_registry.get(item.metadata_provider_key)
+                if provider_cls is not None:
+                    display = provider_cls().to_display(item_metadata.payload)
+                    item.metadata_thumbnail_url = display.get("thumbnail_url", "")
+
         context["items_json"] = json.dumps(list(forjson.values()))
         context["tags"] = Tag.objects.all()
         active_tag_id = self.request.GET.get("tag", "")
@@ -462,7 +475,7 @@ class SearchableListView(ListView):
         return context
 
     def get_queryset(self):
-        queryset = super().get_queryset().prefetch_related("tags")
+        queryset = super().get_queryset().prefetch_related("tags").select_related("metadata")
         tag_id = self.request.GET.get("tag")
         if tag_id:
             queryset = queryset.filter(tags__id=tag_id).distinct()
@@ -553,7 +566,95 @@ class SearchableItemDetailView(DetailView):
         context["source_fetch_notes"] = source_fetch_notes
         context["item_sources"] = item_sources
         context["tags"] = item.tags.all()
+
+        item_metadata = get_item_metadata(item)
+        context["item_metadata"] = item_metadata
+        # Same underlying signal as the schedules warning (see
+        # scheduling_status.schedules_may_not_fire): the periodic drain task
+        # that would move this out of unfetched/pending only runs inside a
+        # live `run_huey` consumer process, which this request-serving
+        # process has no way to confirm is actually running.
+        context["metadata_fetch_may_not_process"] = (
+            item_metadata is not None
+            and item_metadata.status in (ItemMetadata.Status.UNFETCHED, ItemMetadata.Status.PENDING)
+            and schedules_may_not_fire()
+        )
+        if item_metadata is not None:
+            provider_cls = metadata_provider_registry.get(item.metadata_provider_key)
+            if provider_cls is not None:
+                provider = provider_cls()
+                if item_metadata.status == ItemMetadata.Status.MATCHED:
+                    context["metadata_display"] = provider.to_display(item_metadata.payload)
+                elif item_metadata.status == ItemMetadata.Status.NEEDS_REVIEW:
+                    candidates = (item_metadata.payload or {}).get("candidates", [])
+                    context["metadata_candidates"] = [
+                        {
+                            "external_id": candidate.get("external_id", ""),
+                            **provider.to_display(candidate.get("payload", {})),
+                        }
+                        for candidate in candidates
+                    ]
         return context
+
+
+class MetadataRetryView(View):
+    """Manual "Retry metadata fetch" action (task 3.6) — re-enters the shared entrypoint."""
+
+    def post(self, request, pk):
+        item = get_object_or_404(SearchableItem, pk=pk)
+        request_metadata_refresh(item)
+        messages.success(request, "Metadata refresh requested.")
+        return redirect("item_detail", pk=item.pk)
+
+
+class MetadataSelectCandidateView(View):
+    """Operator picks a disambiguation candidate: pin it and materialize the match.
+
+    The candidate's payload was already fetched as part of the ``needs_review``
+    resolution, so this sets ``pinned_external_id``/``status=matched`` directly
+    from the stored candidate rather than enqueuing another fetch.
+    """
+
+    def post(self, request, pk):
+        item = get_object_or_404(SearchableItem, pk=pk)
+        external_id = request.POST.get("external_id", "")
+        item_metadata = get_object_or_404(ItemMetadata, item=item)
+        candidates = (item_metadata.payload or {}).get("candidates", [])
+        selected = next(
+            (c for c in candidates if c.get("external_id") == external_id), None
+        )
+        if selected is None:
+            messages.error(request, "Unknown metadata candidate selected.")
+            return redirect("item_detail", pk=item.pk)
+
+        item_metadata.pinned_external_id = external_id
+        item_metadata.external_id = external_id
+        item_metadata.payload = selected.get("payload", {})
+        item_metadata.status = ItemMetadata.Status.MATCHED
+        item_metadata.fetched_at = timezone.now()
+        item_metadata.save(
+            update_fields=["pinned_external_id", "external_id", "payload", "status", "fetched_at"]
+        )
+        messages.success(request, "Metadata match selected.")
+        return redirect("item_detail", pk=item.pk)
+
+
+class MetadataSetExternalIdView(View):
+    """Manual external-ID entry fallback (task 6.3): pin it and enqueue a fetch."""
+
+    def post(self, request, pk):
+        item = get_object_or_404(SearchableItem, pk=pk)
+        external_id = (request.POST.get("external_id") or "").strip()
+        if not external_id:
+            messages.error(request, "Enter an external identifier.")
+            return redirect("item_detail", pk=item.pk)
+
+        item_metadata, _ = ItemMetadata.objects.get_or_create(item=item)
+        item_metadata.pinned_external_id = external_id
+        item_metadata.save(update_fields=["pinned_external_id"])
+        request_metadata_refresh(item)
+        messages.success(request, "Metadata refresh requested for the given identifier.")
+        return redirect("item_detail", pk=item.pk)
 
 
 class TagListView(ListView):
