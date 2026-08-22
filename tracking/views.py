@@ -11,12 +11,14 @@ from django.shortcuts import get_object_or_404
 from urllib.parse import urlparse
 from .forms import (
     BulkAddItemsForm,
+    BulkEditItemsForm,
     ItemSourceForm,
     ItemSourceFormSet,
     SearchableItemCreateForm,
     SearchableItemForm,
     SourceForm,
     UpdateScheduleForm,
+    apply_bulk_edit,
     create_items_from_bulk_add,
 )
 from .matching import result_matches_item_source
@@ -358,6 +360,98 @@ class BulkAddItemsView(View):
                 "formset": formset,
                 "form_title": "Bulk Add Items",
                 "submit_label": "Create Items",
+            },
+        )
+
+
+class BulkEditItemsView(View):
+    """Persistent multi-round bulk-edit workspace for an existing item selection.
+
+    Entered via POST from ``view_terms`` carrying checked ``item_ids``. Every
+    subsequent Apply/remove/Done action on the workspace re-POSTs here with
+    the working ``item_ids`` carried forward as hidden fields (design.md
+    Decision 2) plus an ``in_workspace`` marker distinguishing those
+    resubmits from the initial entry — the initial entry has no bulk-edit
+    form fields in its POST body, so it must not be run through
+    ``apply_bulk_edit``.
+    """
+
+    template_name = "tracking/bulk_edit_workspace.html"
+
+    def get(self, request):
+        return redirect("view_terms")
+
+    def post(self, request):
+        item_ids = self._clean_item_ids(request.POST.getlist("item_ids"))
+
+        if "in_workspace" not in request.POST:
+            # Initial entry from view_terms's selection checkboxes.
+            if not item_ids:
+                messages.warning(request, "No items selected.")
+                return redirect("view_terms")
+            return self._render(request, item_ids)
+
+        if "done" in request.POST:
+            return redirect("view_terms")
+
+        remove_id = request.POST.get("remove_item_id")
+        if remove_id:
+            try:
+                remove_id = int(remove_id)
+            except ValueError:
+                remove_id = None
+            if remove_id is not None:
+                item_ids = [pk for pk in item_ids if pk != remove_id]
+            return self._render(request, item_ids)
+
+        form = BulkEditItemsForm(request.POST, item_ids=item_ids)
+        results = None
+        if form.is_valid():
+            results = apply_bulk_edit(item_ids, form.cleaned_data)
+            form = None  # Reset to all-fields-leave-unchanged for the next round.
+        return self._render(request, item_ids, form=form, results=results)
+
+    @staticmethod
+    def _clean_item_ids(raw_ids):
+        item_ids = []
+        seen = set()
+        for raw in raw_ids:
+            try:
+                pk = int(raw)
+            except (TypeError, ValueError):
+                continue
+            if pk not in seen:
+                seen.add(pk)
+                item_ids.append(pk)
+        return item_ids
+
+    def _render(self, request, item_ids, form=None, results=None):
+        items_by_pk = {
+            item.pk: item
+            for item in SearchableItem.objects.filter(pk__in=item_ids).prefetch_related("tags")
+        }
+        # Drop any id that no longer resolves to an existing item (task 2.5) —
+        # normal missing-row handling, not concurrency detection.
+        items = [items_by_pk[pk] for pk in item_ids if pk in items_by_pk]
+        valid_ids = [item.pk for item in items]
+
+        if not valid_ids:
+            messages.warning(request, "No items remain in the bulk-edit selection.")
+            return redirect("view_terms")
+
+        if form is None:
+            form = BulkEditItemsForm(item_ids=valid_ids)
+
+        return render(
+            request,
+            self.template_name,
+            {
+                "form": form,
+                "items": items,
+                "item_ids": valid_ids,
+                "results": results,
+                "selected_product_line_values": form["expected_product_line_suggestions"].value() or [],
+                "selected_category_values": form["expected_category_suggestions"].value() or [],
             },
         )
 

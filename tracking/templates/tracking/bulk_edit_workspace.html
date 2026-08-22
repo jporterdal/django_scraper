@@ -1,0 +1,173 @@
+{% extends "tracking/base.html" %}
+
+{% block title %}Bulk Edit Items{% endblock %}
+
+{% block content %}
+    <h1 class="text-center mb-4">Bulk Edit Items</h1>
+
+    {% if results %}
+    <div class="card mb-4">
+        <div class="card-header">Last Apply Round</div>
+        <div class="card-body" style="max-height: 12rem; overflow-y: auto;">
+            <ul class="list-unstyled mb-0">
+                {% for result in results %}
+                <li class="{% if result.success %}text-success{% else %}text-danger{% endif %}">
+                    {{ result.item.text }} —
+                    {% if result.success %}
+                        Applied
+                    {% else %}
+                        Failed: {{ result.error }}
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="row">
+        <div class="col-lg-5 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    Selected Items ({{ items|length }})
+                </div>
+                <div class="card-body p-0" style="max-height: 34rem; overflow-y: auto;">
+                    <table class="table table-sm mb-0 align-middle">
+                        <tbody>
+                            {% for item in items %}
+                            <tr>
+                                <td>
+                                    {{ item.text }}
+                                    {% if item.active %}
+                                        <span class="badge text-bg-success ms-1">active</span>
+                                    {% else %}
+                                        <span class="badge text-bg-secondary ms-1">inactive</span>
+                                    {% endif %}
+                                    <div class="small text-muted">
+                                        {{ item.get_priority_display }}
+                                        {% for tag in item.tags.all %}
+                                            <span class="badge rounded-pill text-bg-secondary"
+                                                  {% if tag.color %}style="background-color: {{ tag.color }} !important;"{% endif %}>
+                                                {{ tag.name }}
+                                            </span>
+                                        {% endfor %}
+                                    </div>
+                                </td>
+                                <td class="text-end">
+                                    <form method="post" action="{% url 'bulk_edit_items' %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="in_workspace" value="1">
+                                        {% for pk in item_ids %}<input type="hidden" name="item_ids" value="{{ pk }}">{% endfor %}
+                                        <input type="hidden" name="remove_item_id" value="{{ item.pk }}">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm">Remove</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-7">
+            <div class="card mb-3">
+                <div class="card-body">
+                    <form method="post" action="{% url 'bulk_edit_items' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="in_workspace" value="1">
+                        {% for pk in item_ids %}<input type="hidden" name="item_ids" value="{{ pk }}">{% endfor %}
+
+                        {% if form.non_field_errors %}
+                            <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+                        {% endif %}
+
+                        {% for field in form %}
+                            {% if field.name != "expected_product_line_suggestions" and field.name != "expected_category_suggestions" %}
+                            <div class="mb-3">
+                                <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
+                                {{ field }}
+                                {% if field.help_text %}
+                                    <div class="form-text">{{ field.help_text }}</div>
+                                {% endif %}
+                                {% if field.errors %}
+                                    <div class="text-danger small">{{ field.errors }}</div>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        {% endfor %}
+
+                        <div class="mb-3">
+                            <label class="form-label">{{ form.expected_product_line_suggestions.label }}</label>
+                            {% if form.product_line_choice_groups %}
+                                <div class="border rounded p-2" style="max-height: 14rem; overflow-y: auto;">
+                                    {% for group in form.product_line_choice_groups %}
+                                        <div class="mb-2">
+                                            <div class="small text-muted fw-bold">
+                                                {{ group.source.key }} — {{ group.item_count }} of {{ items|length }} selected items
+                                            </div>
+                                            {% for choice_value, raw_value in group.choices %}
+                                                <div class="form-check">
+                                                    <input type="checkbox" class="form-check-input"
+                                                           name="expected_product_line_suggestions"
+                                                           id="pl-{{ group.source.key }}-{{ forloop.counter }}"
+                                                           value="{{ choice_value }}"
+                                                           {% if choice_value in selected_product_line_values %}checked{% endif %}>
+                                                    <label class="form-check-label" for="pl-{{ group.source.key }}-{{ forloop.counter }}">{{ raw_value }}</label>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <p class="text-muted small mb-0">No vendor-observed suggestions for this selection.</p>
+                            {% endif %}
+                            {% if form.expected_product_line_suggestions.help_text %}
+                                <div class="form-text">{{ form.expected_product_line_suggestions.help_text }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">{{ form.expected_category_suggestions.label }}</label>
+                            {% if form.category_choice_groups %}
+                                <div class="border rounded p-2" style="max-height: 14rem; overflow-y: auto;">
+                                    {% for group in form.category_choice_groups %}
+                                        <div class="mb-2">
+                                            <div class="small text-muted fw-bold">
+                                                {{ group.source.key }} — {{ group.item_count }} of {{ items|length }} selected items
+                                            </div>
+                                            {% for choice_value, raw_value in group.choices %}
+                                                <div class="form-check">
+                                                    <input type="checkbox" class="form-check-input"
+                                                           name="expected_category_suggestions"
+                                                           id="cat-{{ group.source.key }}-{{ forloop.counter }}"
+                                                           value="{{ choice_value }}"
+                                                           {% if choice_value in selected_category_values %}checked{% endif %}>
+                                                    <label class="form-check-label" for="cat-{{ group.source.key }}-{{ forloop.counter }}">{{ raw_value }}</label>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <p class="text-muted small mb-0">No vendor-observed suggestions for this selection.</p>
+                            {% endif %}
+                            {% if form.expected_category_suggestions.help_text %}
+                                <div class="form-text">{{ form.expected_category_suggestions.help_text }}</div>
+                            {% endif %}
+                        </div>
+
+                        <button type="submit" class="btn btn-primary">Apply</button>
+                    </form>
+                </div>
+            </div>
+
+            <form method="post" action="{% url 'bulk_edit_items' %}">
+                {% csrf_token %}
+                <input type="hidden" name="in_workspace" value="1">
+                {% for pk in item_ids %}<input type="hidden" name="item_ids" value="{{ pk }}">{% endfor %}
+                <button type="submit" name="done" value="1" class="btn btn-outline-secondary">Done</button>
+            </form>
+        </div>
+    </div>
+{% endblock %}

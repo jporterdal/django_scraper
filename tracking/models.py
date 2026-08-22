@@ -1,8 +1,10 @@
 import copy
+from collections import defaultdict
 from datetime import timedelta
 from urllib.parse import quote_plus
 
 from django.db import models
+from django.db.models import Count
 from django.utils import timezone
 
 
@@ -591,6 +593,61 @@ def observed_values_for_item(item, field_name):
         .order_by("-last_seen")
         .values_list("source__key", "value")
     )
+
+
+def vendor_scoped_suggestions_for_items(item_ids, field_name):
+    """Vendor-grouped ``ObservedCategoryValue`` suggestions across a selection.
+
+    For every vendor (``Source``) configured via any of ``item_ids``'s
+    ``ItemSource``s, returns one group with that vendor's item-count within
+    the selection and its distinct observed ``field_name`` values (most
+    recently observed first). Unlike ``observed_values_for_item`` (scoped to
+    one item's sources with no count), there is no minimum-shared-item
+    threshold — a vendor used by a single selected item still gets its own
+    group, per the bulk-item-editing design.
+
+    Batched to a bounded number of queries regardless of selection size: one
+    query for vendor/count, one for suggestion values — not looped per item.
+    """
+    item_ids = list(item_ids)
+    if not item_ids:
+        return []
+
+    vendor_counts = list(
+        ItemSource.objects.filter(item_id__in=item_ids)
+        .values("source_id")
+        .annotate(item_count=Count("item_id", distinct=True))
+        .order_by("source_id")
+    )
+    if not vendor_counts:
+        return []
+
+    source_ids = [row["source_id"] for row in vendor_counts]
+    counts_by_source = {row["source_id"]: row["item_count"] for row in vendor_counts}
+    sources_by_id = {s.pk: s for s in Source.objects.filter(pk__in=source_ids)}
+
+    values_by_source = defaultdict(list)
+    for source_id, value in (
+        ObservedCategoryValue.objects.filter(
+            source_id__in=source_ids, field_name=field_name
+        )
+        .order_by("source_id", "-last_seen")
+        .values_list("source_id", "value")
+    ):
+        values_by_source[source_id].append(value)
+
+    groups = []
+    for source_id in source_ids:
+        source = sources_by_id.get(source_id)
+        if source is None:
+            continue
+        groups.append({
+            "source": source,
+            "item_count": counts_by_source[source_id],
+            "values": values_by_source.get(source_id, []),
+        })
+    groups.sort(key=lambda group: group["source"].key)
+    return groups
 
 
 class UpdateSchedule(models.Model):

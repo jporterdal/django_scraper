@@ -6,6 +6,7 @@ urlpatterns = [
     path("", views.index, name="tracking_index"),
     path("add_term/", views.SearchableCreateView.as_view(), name="add_term"),
     path("bulk_add/", views.BulkAddItemsView.as_view(), name="bulk_add"),
+    path("bulk_edit/", views.BulkEditItemsView.as_view(), name="bulk_edit_items"),
     path("edit_term/<int:pk>/", views.SearchableUpdateView.as_view(), name="edit_term"),
     path("view_terms/", views.SearchableListView.as_view(), name="view_terms"),
     path("item/<int:pk>/", views.SearchableItemDetailView.as_view(), name="item_detail"),

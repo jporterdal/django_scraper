@@ -98,8 +98,27 @@ Explicitly out of scope for the initial implementation, noted here for when the 
 
 - A periodic re-sweep re-fetching metadata for already-`matched` items (only creation/update/manual-retry populate the queue today).
 - Bulk "refresh all" / "refresh errored" actions across many existing items.
-- General bulk-editing of any field across multiple existing items — the `item_ids` checkbox selection and `mode=selected` plumbing already on `view_terms` (see `UpdateFromWebView`) is reusable groundwork for this.
 - A second registered provider — only the registry seam is proven out so far; a real second provider may reveal the three-slot display contract needs widening.
+
+## Bulk item editing
+
+Operators can change fields across many existing items at once from `view_terms`: check any rows (active or inactive) and click **Bulk Edit Selected** to open a persistent workspace scoped to that selection.
+
+- **Persistent workspace, not a one-shot form**: the working item selection is carried forward as hidden fields across every Apply, so an operator can make several unrelated edits (e.g. a priority change, then a tag change) to the same selection without re-selecting from `view_terms`. Return to the item list only via the explicit **Done** action. An individual item can be dropped from the working selection via its row's "Remove" action, without affecting the rest.
+- **Every field defaults to "leave unchanged"** — a real sentinel distinct from that field's normal blank/false value — so a round that only sets `priority` leaves `active`, tags, the metadata provider, and expected product-line/category untouched on every affected item.
+- **Editable fields**:
+  - `priority` — plain overwrite.
+  - `active` — tri-state (leave / activate / deactivate); not a checkbox, since a checkbox can't represent "leave unchanged" independent of `active`'s own true/false.
+  - `tags` — two independent selections, tags to add and tags to remove, applied respectively as additions/removals. There is no "replace all tags" bulk action.
+  - `metadata_provider_key` — leave / set / clear. A changed value is applied through the same shared `request_metadata_refresh`/`sync_metadata_after_save` entrypoint used by single-item create/edit and bulk add (see "Item metadata enrichment" above), so the provider-change reset (stale payload/external_id cleared, status back to `unfetched`) and refresh-enqueue behavior is reused, not reimplemented, at bulk scale.
+  - `expected_product_line` / `expected_category` — additive only, never a full replace. Suggestions are grouped by vendor (every `Source` configured on at least one selected item, no minimum-shared-item threshold), sourced from `ObservedCategoryValue` scoped to that vendor. Checking a suggestion adds it only to the items in the selection that have that vendor configured via `ItemSource`; other items in the selection are unaffected by that checkbox. Values are merged into each item's existing list and deduplicated by exact string equality — reapplying the same suggestion across rounds never duplicates it.
+- **Best-effort per item**: an Apply round attempts every item in the working selection independently; one item's failure (e.g. a save error) does not stop the round from applying to the rest, and each item's outcome is reported individually.
+
+### Deferred / future directions
+
+- **Multi-user/concurrent modification is not detected or handled.** If an item in the working selection is deleted or otherwise modified by another user or process between being selected and a later Apply round in the same session, the round proceeds using the ordinary per-item save path with no bulk-edit-specific conflict detection — mirroring how "Item metadata enrichment" above documents its own deferred scope. Multi-user interaction is a broader, unaddressed concern for this single-operator tool today.
+- Manual free-text entry for `expected_product_line`/`expected_category` in bulk mode (suggestions only for v1 — the single-item edit form's manual textarea has no bulk equivalent yet).
+- An audit/undo log of bulk changes — a mistaken Apply (e.g. the wrong tag added to 50 items) has no built-in recovery path beyond manually reversing it.
 
 ## PostgreSQL
 

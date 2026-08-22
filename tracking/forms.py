@@ -1,4 +1,6 @@
+import json
 import re
+from collections import defaultdict
 
 from django import forms
 from django.db import transaction
@@ -14,9 +16,19 @@ from .models import (
     Tag,
     UpdateSchedule,
     observed_values_for_item,
+    vendor_scoped_suggestions_for_items,
 )
 from .parsers import sources as parser_registry
 from .ratelimit import PROFILE_CHOICES as rate_limit_profile_choices
+
+# Sentinels for BulkEditItemsForm's per-field tri-state-or-wider choices —
+# distinct from every field's normal blank/false/empty value, so a partial
+# bulk-edit round only touches fields the operator explicitly set (see
+# design.md Decision 3). BULK_EDIT_CLEAR is its own sentinel (not "") because
+# a plain ChoiceField can't otherwise distinguish "explicitly selected blank"
+# from "field absent from this POST" — both collapse to "" in cleaned_data.
+BULK_EDIT_LEAVE = "__leave__"
+BULK_EDIT_CLEAR = "__clear__"
 
 # Sentinel for BulkAddItemsForm "No tag" choice (distinct from unchosen "").
 BULK_ADD_TAG_NONE = "__none__"
@@ -661,3 +673,291 @@ def create_items_from_bulk_add(terms, tag, priority, source_forms, metadata_prov
                 request_metadata_refresh(item)
             created.append(item)
     return created
+
+
+def _bulk_edit_suggestion_choice_value(source_key, value):
+    """Encode a vendor-scoped suggestion choice as a single form value.
+
+    Bulk edit needs to know which vendor a checked suggestion came from (to
+    resolve the correct item subset at apply time), unlike the single-item
+    form's suggestion checkboxes, which only ever reconcile against one
+    item's own list and so can get away with a bare value string.
+    """
+    return json.dumps([source_key, value])
+
+
+def _parse_bulk_edit_suggestion_choice_value(raw):
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(parsed, list) or len(parsed) != 2:
+        return None
+    return parsed[0], parsed[1]
+
+
+class BulkEditItemsForm(forms.Form):
+    """Combined bulk-edit form for the workspace; every field defaults to
+    "leave unchanged" (see ``BULK_EDIT_LEAVE``), so an apply round only
+    touches the fields the operator explicitly set away from that default.
+    """
+
+    priority = forms.ChoiceField(choices=[], required=False, label="Priority")
+    active = forms.ChoiceField(
+        choices=[
+            (BULK_EDIT_LEAVE, "Leave unchanged"),
+            ("activate", "Activate"),
+            ("deactivate", "Deactivate"),
+        ],
+        required=False,
+        label="Active",
+    )
+    tags_add = forms.ModelMultipleChoiceField(
+        queryset=Tag.objects.all(),
+        required=False,
+        label="Add tags",
+    )
+    tags_remove = forms.ModelMultipleChoiceField(
+        queryset=Tag.objects.all(),
+        required=False,
+        label="Remove tags",
+    )
+    metadata_provider_key = forms.ChoiceField(
+        choices=[],
+        required=False,
+        label="Metadata provider",
+        help_text=METADATA_PROVIDER_HELP_TEXT,
+    )
+    expected_product_line_suggestions = forms.MultipleChoiceField(
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label="Add expected product line",
+        help_text=(
+            "Checking a suggestion adds it only to selected items that have "
+            "that vendor configured; other items in the selection are unaffected."
+        ),
+    )
+    expected_category_suggestions = forms.MultipleChoiceField(
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label="Add expected category",
+        help_text=(
+            "Checking a suggestion adds it only to selected items that have "
+            "that vendor configured; other items in the selection are unaffected."
+        ),
+    )
+
+    def __init__(self, *args, item_ids=None, **kwargs):
+        self.item_ids = list(item_ids or [])
+        super().__init__(*args, **kwargs)
+
+        self.fields["priority"].choices = [
+            (BULK_EDIT_LEAVE, "Leave unchanged"),
+            *((str(value), label) for value, label in SearchableItem.Priority.choices),
+        ]
+        self.fields["metadata_provider_key"].choices = [
+            (BULK_EDIT_LEAVE, "Leave unchanged"),
+            (BULK_EDIT_CLEAR, "Clear (no provider)"),
+            *((key, key) for key in metadata_provider_registry),
+        ]
+        self.initial.setdefault("priority", BULK_EDIT_LEAVE)
+        self.initial.setdefault("active", BULK_EDIT_LEAVE)
+        self.initial.setdefault("metadata_provider_key", BULK_EDIT_LEAVE)
+
+        self.product_line_choice_groups = self._build_choice_groups(
+            vendor_scoped_suggestions_for_items(self.item_ids, "product_line")
+        )
+        self.category_choice_groups = self._build_choice_groups(
+            vendor_scoped_suggestions_for_items(self.item_ids, "category")
+        )
+        self.fields["expected_product_line_suggestions"].choices = [
+            choice
+            for group in self.product_line_choice_groups
+            for choice in group["choices"]
+        ]
+        self.fields["expected_category_suggestions"].choices = [
+            choice
+            for group in self.category_choice_groups
+            for choice in group["choices"]
+        ]
+
+        _apply_bootstrap_form_classes(self)
+
+    @staticmethod
+    def _build_choice_groups(groups):
+        return [
+            {
+                "source": group["source"],
+                "item_count": group["item_count"],
+                "choices": [
+                    (
+                        _bulk_edit_suggestion_choice_value(group["source"].key, value),
+                        value,
+                    )
+                    for value in group["values"]
+                ],
+            }
+            for group in groups
+        ]
+
+    def clean_priority(self):
+        value = self.cleaned_data.get("priority")
+        if not value or value == BULK_EDIT_LEAVE:
+            return None
+        return int(value)
+
+    def clean_active(self):
+        value = self.cleaned_data.get("active")
+        if value == "activate":
+            return True
+        if value == "deactivate":
+            return False
+        return None
+
+    def clean_metadata_provider_key(self):
+        value = self.cleaned_data.get("metadata_provider_key")
+        if not value or value == BULK_EDIT_LEAVE:
+            return BULK_EDIT_LEAVE
+        if value == BULK_EDIT_CLEAR:
+            return ""
+        return value
+
+    def clean_expected_product_line_suggestions(self):
+        return self._parse_suggestions(
+            self.cleaned_data.get("expected_product_line_suggestions")
+        )
+
+    def clean_expected_category_suggestions(self):
+        return self._parse_suggestions(
+            self.cleaned_data.get("expected_category_suggestions")
+        )
+
+    @staticmethod
+    def _parse_suggestions(raw_values):
+        parsed = []
+        for raw in raw_values or []:
+            pair = _parse_bulk_edit_suggestion_choice_value(raw)
+            if pair is not None:
+                parsed.append(pair)
+        return parsed
+
+
+def _resolve_suggestion_subsets(item_ids, suggestions):
+    """Map item pk -> list of values to add, for vendor-scoped suggestions.
+
+    ``suggestions`` is a list of ``(source_key, value)`` pairs. Batched to one
+    query per distinct vendor among the checked suggestions — not one query
+    per item (see design.md's query-count requirement).
+    """
+    result = defaultdict(list)
+    if not suggestions:
+        return result
+
+    values_by_vendor = defaultdict(list)
+    for source_key, value in suggestions:
+        values_by_vendor[source_key].append(value)
+
+    for source_key, values in values_by_vendor.items():
+        qualifying_item_ids = ItemSource.objects.filter(
+            item_id__in=item_ids, source_id=source_key
+        ).values_list("item_id", flat=True)
+        for item_id in qualifying_item_ids:
+            result[item_id].extend(values)
+    return result
+
+
+def _apply_bulk_edit_to_item(
+    item,
+    *,
+    priority,
+    active,
+    tags_add,
+    tags_remove,
+    metadata_provider_key,
+    expected_product_line_add,
+    expected_category_add,
+):
+    update_fields = []
+    if priority is not None:
+        item.priority = priority
+        update_fields.append("priority")
+    if active is not None:
+        item.active = active
+        update_fields.append("active")
+    if expected_product_line_add:
+        item.expected_product_line = list(
+            dict.fromkeys([*item.expected_product_line, *expected_product_line_add])
+        )
+        update_fields.append("expected_product_line")
+    if expected_category_add:
+        item.expected_category = list(
+            dict.fromkeys([*item.expected_category, *expected_category_add])
+        )
+        update_fields.append("expected_category")
+
+    provider_changed = (
+        metadata_provider_key != BULK_EDIT_LEAVE
+        and item.metadata_provider_key != metadata_provider_key
+    )
+    if provider_changed:
+        item.metadata_provider_key = metadata_provider_key
+        update_fields.append("metadata_provider_key")
+
+    if update_fields:
+        item.save(update_fields=update_fields)
+
+    if tags_add:
+        item.tags.add(*tags_add)
+    if tags_remove:
+        item.tags.remove(*tags_remove)
+
+    if provider_changed:
+        sync_metadata_after_save(item, provider_changed=True, text_changed=False)
+
+
+def apply_bulk_edit(item_ids, cleaned_data):
+    """Best-effort per-item apply of one bulk-edit round.
+
+    Every item in ``item_ids`` is attempted independently; one item's failure
+    does not stop the rest from being attempted (design.md Decision 7).
+    Returns a list of ``{"item", "success", "error"}`` dicts in ``item_ids``
+    order, omitting any id that no longer resolves to an existing item.
+    """
+    product_line_adds = _resolve_suggestion_subsets(
+        item_ids, cleaned_data.get("expected_product_line_suggestions")
+    )
+    category_adds = _resolve_suggestion_subsets(
+        item_ids, cleaned_data.get("expected_category_suggestions")
+    )
+    tags_add = list(cleaned_data.get("tags_add") or [])
+    tags_remove = list(cleaned_data.get("tags_remove") or [])
+    metadata_provider_key = cleaned_data.get("metadata_provider_key", BULK_EDIT_LEAVE)
+    priority = cleaned_data.get("priority")
+    active = cleaned_data.get("active")
+
+    items_by_pk = {
+        item.pk: item
+        for item in SearchableItem.objects.filter(pk__in=item_ids).prefetch_related("tags")
+    }
+
+    results = []
+    for pk in item_ids:
+        item = items_by_pk.get(pk)
+        if item is None:
+            continue
+        try:
+            with transaction.atomic():
+                _apply_bulk_edit_to_item(
+                    item,
+                    priority=priority,
+                    active=active,
+                    tags_add=tags_add,
+                    tags_remove=tags_remove,
+                    metadata_provider_key=metadata_provider_key,
+                    expected_product_line_add=product_line_adds.get(pk, []),
+                    expected_category_add=category_adds.get(pk, []),
+                )
+            results.append({"item": item, "success": True, "error": ""})
+        except Exception as exc:
+            results.append({"item": item, "success": False, "error": str(exc)})
+    return results
