@@ -1,5 +1,6 @@
 import json
 import re
+from collections import defaultdict
 
 from django import forms
 from django.db import transaction
@@ -14,10 +15,47 @@ from .models import (
     Source,
     Tag,
     UpdateSchedule,
+    expected_value_activity_for_items,
     observed_values_for_item,
+    source_pattern_groups_for_items,
+    tag_activity_for_items,
+    vendor_scoped_suggestions_for_items,
 )
 from .parsers import sources as parser_registry
 from .ratelimit import PROFILE_CHOICES as rate_limit_profile_choices
+
+# Sentinels for BulkEditItemsForm's per-field tri-state-or-wider choices —
+# distinct from every field's normal blank/false/empty value, so a partial
+# bulk-edit round only touches fields the operator explicitly set (see
+# design.md Decision 3). BULK_EDIT_CLEAR is its own sentinel (not "") because
+# a plain ChoiceField can't otherwise distinguish "explicitly selected blank"
+# from "field absent from this POST" — both collapse to "" in cleaned_data.
+BULK_EDIT_LEAVE = "__leave__"
+BULK_EDIT_CLEAR = "__clear__"
+
+# One tri-state control per row (tag, or expected_* vendor/manual value) —
+# add / remove / leave unchanged, defaulting to leave unchanged (design.md
+# Decision 9). Field names are name-spaced per prefix below so each row gets
+# its own radio group.
+BULK_EDIT_TRISTATE_CHOICES = [
+    (BULK_EDIT_LEAVE, "Unchanged"),
+    ("add", "Add"),
+    ("remove", "Remove"),
+]
+TAG_STATE_PREFIX = "tag_state:"
+EXPECTED_PRODUCT_LINE_STATE_PREFIX = "expected_product_line_state:"
+EXPECTED_CATEGORY_STATE_PREFIX = "expected_category_state:"
+
+# Search-patterns section (design.md Decision 10): one tri-state row per
+# pattern already configured somewhere in the selection, name-spaced per
+# (Source, field) via the same (source_key, value)-pair JSON encoding
+# above, plus one free-text manual-add textarea per (Source, field) — the
+# structural analogue of "Manual entry" for a field with no
+# ObservedCategoryValue-style suggestion fallback.
+SOURCE_INCLUDE_STATE_PREFIX = "source_include_state:"
+SOURCE_EXCLUDE_STATE_PREFIX = "source_exclude_state:"
+SOURCE_INCLUDE_MANUAL_PREFIX = "source_include_manual:"
+SOURCE_EXCLUDE_MANUAL_PREFIX = "source_exclude_manual:"
 
 # Sentinel for BulkAddItemsForm "No tag" choice (distinct from unchosen "").
 BULK_ADD_TAG_NONE = "__none__"
@@ -123,6 +161,23 @@ def _list_to_lines(value):
     if isinstance(value, (list, tuple)):
         return "\n".join(str(p) for p in value)
     return value or ""
+
+
+def _validate_regex_patterns(patterns):
+    """Raise a form ``ValidationError`` on the first invalid regex in ``patterns``.
+
+    Shared by ``ItemSourceForm`` (single-item include/exclude textareas) and
+    ``BulkEditItemsForm`` (per-Source manual-add textareas, design.md
+    Decision 10) so both surface the same error wording without duplicating
+    the check.
+    """
+    for pattern in patterns:
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            raise forms.ValidationError(
+                f"Invalid regex pattern {pattern!r}: {exc}"
+            )
 
 
 def _apply_bootstrap_form_classes(form):
@@ -388,13 +443,7 @@ class ItemSourceForm(forms.ModelForm):
 
     def _clean_patterns(self, field_name):
         patterns = _lines_to_list(self.cleaned_data.get(field_name))
-        for pattern in patterns:
-            try:
-                re.compile(pattern)
-            except re.error as exc:
-                raise forms.ValidationError(
-                    f"Invalid regex pattern {pattern!r}: {exc}"
-                )
+        _validate_regex_patterns(patterns)
         return patterns
 
     def clean_title_include_patterns(self):
@@ -708,3 +757,631 @@ def create_items_from_bulk_add(terms, tag, priority, source_forms, metadata_prov
                 request_metadata_refresh(item)
             created.append(item)
     return created
+
+
+def _bulk_edit_suggestion_choice_value(source_key, value):
+    """Encode a vendor-scoped suggestion choice as a single form value.
+
+    Bulk edit needs to know which vendor a checked suggestion came from (to
+    resolve the correct item subset at apply time), unlike the single-item
+    form's suggestion checkboxes, which only ever reconcile against one
+    item's own list and so can get away with a bare value string.
+    """
+    return json.dumps([source_key, value])
+
+
+def _parse_bulk_edit_suggestion_choice_value(raw):
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(parsed, list) or len(parsed) != 2:
+        return None
+    return parsed[0], parsed[1]
+
+
+class BulkEditItemsForm(forms.Form):
+    """Combined bulk-edit form for the workspace; every field defaults to
+    "leave unchanged" (see ``BULK_EDIT_LEAVE``), so an apply round only
+    touches the fields the operator explicitly set away from that default.
+
+    ``tags`` and ``expected_product_line``/``expected_category`` are each
+    backed by dynamically-named tri-state fields added in ``__init__`` — one
+    per ``Tag``, and one per vendor-scoped or "Manual entry" suggestion row
+    (design.md Decision 9) — rather than static fields, since the row
+    universe is computed per selection.
+    """
+
+    priority = forms.ChoiceField(choices=[], required=False, label="Priority")
+    active = forms.ChoiceField(
+        choices=[
+            (BULK_EDIT_LEAVE, "Leave unchanged"),
+            ("activate", "Activate"),
+            ("deactivate", "Deactivate"),
+        ],
+        required=False,
+        label="Active",
+    )
+    metadata_provider_key = forms.ChoiceField(
+        choices=[],
+        required=False,
+        label="Metadata provider",
+        help_text=METADATA_PROVIDER_HELP_TEXT,
+    )
+
+    def __init__(self, *args, item_ids=None, **kwargs):
+        self.item_ids = list(item_ids or [])
+        super().__init__(*args, **kwargs)
+
+        self.fields["priority"].choices = [
+            (BULK_EDIT_LEAVE, "Leave unchanged"),
+            *((str(value), label) for value, label in SearchableItem.Priority.choices),
+        ]
+        self.fields["metadata_provider_key"].choices = [
+            (BULK_EDIT_LEAVE, "Leave unchanged"),
+            (BULK_EDIT_CLEAR, "Clear (no provider)"),
+            *((key, key) for key in metadata_provider_registry),
+        ]
+        self.initial.setdefault("priority", BULK_EDIT_LEAVE)
+        self.initial.setdefault("active", BULK_EDIT_LEAVE)
+        self.initial.setdefault("metadata_provider_key", BULK_EDIT_LEAVE)
+
+        self.tag_rows = self._build_tag_rows()
+        self.product_line_groups = self._build_expected_state_groups(
+            "product_line", EXPECTED_PRODUCT_LINE_STATE_PREFIX
+        )
+        self.category_groups = self._build_expected_state_groups(
+            "category", EXPECTED_CATEGORY_STATE_PREFIX
+        )
+        self.source_pattern_groups = self._build_source_pattern_groups()
+
+        _apply_bootstrap_form_classes(self)
+
+    @property
+    def leading_fields(self):
+        """The plain (non-tri-state) fields, in display order.
+
+        Kept distinct from ``self.fields`` because iterating the latter would
+        also surface every dynamically-added tag/expected-value tri-state
+        field, which the template renders separately via
+        ``tag_rows``/``product_line_groups``/``category_groups``.
+        """
+        return [self["priority"], self["active"], self["metadata_provider_key"]]
+
+    def _add_tristate_field(self, name):
+        self.fields[name] = forms.ChoiceField(
+            choices=BULK_EDIT_TRISTATE_CHOICES,
+            required=False,
+            initial=BULK_EDIT_LEAVE,
+            widget=forms.RadioSelect,
+        )
+        return {"field_name": name, "selected": self[name].value() or BULK_EDIT_LEAVE}
+
+    def _build_tag_rows(self):
+        counts = tag_activity_for_items(self.item_ids)
+        rows = []
+        for tag in Tag.objects.order_by(Lower("name")):
+            row = self._add_tristate_field(f"{TAG_STATE_PREFIX}{tag.pk}")
+            row["tag"] = tag
+            row["count"] = counts.get(tag.pk, 0)
+            # Any selected item could have a tag — no Source-style scoping
+            # narrows the denominator (design.md's "Active on X / Y items").
+            row["total"] = len(self.item_ids)
+            rows.append(row)
+        return rows
+
+    def _build_expected_state_groups(self, field_name, prefix):
+        vendor_groups = vendor_scoped_suggestions_for_items(self.item_ids, field_name)
+        activity = expected_value_activity_for_items(self.item_ids, field_name)
+
+        groups = []
+        for group in vendor_groups:
+            source_key = group["source"].key
+            rows = []
+            for value in group["values"]:
+                row = self._add_tristate_field(
+                    prefix + _bulk_edit_suggestion_choice_value(source_key, value)
+                )
+                row["value"] = value
+                row["count"] = activity.get((value, source_key), 0)
+                # Only items with this vendor configured could ever have
+                # this value — same scope as the group's own "N of M" count.
+                row["total"] = group["item_count"]
+                rows.append(row)
+            groups.append(
+                {
+                    "label": source_key,
+                    "item_count": group["item_count"],
+                    "rows": rows,
+                }
+            )
+
+        manual_values = sorted(
+            {value for (value, source) in activity if source is None}
+        )
+        manual_rows = []
+        for value in manual_values:
+            row = self._add_tristate_field(
+                prefix + _bulk_edit_suggestion_choice_value(None, value)
+            )
+            row["value"] = value
+            row["count"] = activity.get((value, None), 0)
+            # A manual entry's add applies to every selected item, regardless
+            # of vendor configuration — no Source-style scoping narrows it.
+            row["total"] = len(self.item_ids)
+            manual_rows.append(row)
+        if manual_rows:
+            groups.append(
+                {"label": "Manual entry", "item_count": None, "rows": manual_rows}
+            )
+
+        return groups
+
+    def _build_source_pattern_groups(self):
+        """One group per Source configured in the selection (design.md
+        Decision 10): a tri-state row per already-configured pattern for
+        each of Include/Exclude, plus a free-text manual-add textarea per
+        (Source, field) since patterns have no suggestion-fallback source.
+        """
+        groups = []
+        for group in source_pattern_groups_for_items(self.item_ids):
+            source_key = group["source"].pk
+
+            include_rows = []
+            for pattern, count in group["include_patterns"]:
+                row = self._add_tristate_field(
+                    SOURCE_INCLUDE_STATE_PREFIX
+                    + _bulk_edit_suggestion_choice_value(source_key, pattern)
+                )
+                row["value"] = pattern
+                row["count"] = count
+                # Only items with this Source's ItemSource configured could
+                # ever have this pattern active.
+                row["total"] = group["item_count"]
+                include_rows.append(row)
+
+            exclude_rows = []
+            for pattern, count in group["exclude_patterns"]:
+                row = self._add_tristate_field(
+                    SOURCE_EXCLUDE_STATE_PREFIX
+                    + _bulk_edit_suggestion_choice_value(source_key, pattern)
+                )
+                row["value"] = pattern
+                row["count"] = count
+                row["total"] = group["item_count"]
+                exclude_rows.append(row)
+
+            include_manual_name = f"{SOURCE_INCLUDE_MANUAL_PREFIX}{source_key}"
+            exclude_manual_name = f"{SOURCE_EXCLUDE_MANUAL_PREFIX}{source_key}"
+            self.fields[include_manual_name] = forms.CharField(
+                required=False,
+                widget=forms.Textarea(
+                    attrs={"rows": 3, "placeholder": "Add new pattern(s), one per line"}
+                ),
+            )
+            self.fields[exclude_manual_name] = forms.CharField(
+                required=False,
+                widget=forms.Textarea(
+                    attrs={"rows": 3, "placeholder": "Add new pattern(s), one per line"}
+                ),
+            )
+
+            groups.append({
+                "source": group["source"],
+                "item_count": group["item_count"],
+                "include_rows": include_rows,
+                "exclude_rows": exclude_rows,
+                "include_manual_field": self[include_manual_name],
+                "exclude_manual_field": self[exclude_manual_name],
+            })
+        return groups
+
+    def clean_priority(self):
+        value = self.cleaned_data.get("priority")
+        if not value or value == BULK_EDIT_LEAVE:
+            return None
+        return int(value)
+
+    def clean_active(self):
+        value = self.cleaned_data.get("active")
+        if value == "activate":
+            return True
+        if value == "deactivate":
+            return False
+        return None
+
+    def clean_metadata_provider_key(self):
+        value = self.cleaned_data.get("metadata_provider_key")
+        if not value or value == BULK_EDIT_LEAVE:
+            return BULK_EDIT_LEAVE
+        if value == BULK_EDIT_CLEAR:
+            return ""
+        return value
+
+    def clean(self):
+        """Validate every per-Source manual-add textarea as regex.
+
+        These are the only dynamically-named fields whose per-field
+        ``clean_<name>`` can't be defined as a method (the name contains a
+        colon), so validation lives here instead — reusing
+        ``_validate_regex_patterns`` verbatim (design.md Decision 10,
+        task 12.4). An invalid line is reported against its own field
+        without touching any other field's lines.
+        """
+        cleaned = super().clean()
+        if cleaned is None:
+            return cleaned
+        for field_name, value in list(cleaned.items()):
+            if not (
+                field_name.startswith(SOURCE_INCLUDE_MANUAL_PREFIX)
+                or field_name.startswith(SOURCE_EXCLUDE_MANUAL_PREFIX)
+            ):
+                continue
+            try:
+                _validate_regex_patterns(_lines_to_list(value))
+            except forms.ValidationError as exc:
+                self.add_error(field_name, exc)
+        return cleaned
+
+
+def _resolve_suggestion_subsets(item_ids, pairs):
+    """Map item pk -> list of ``{"value", "source"}`` entries, for a set of
+    ``(source_key, value)`` pairs (either all to add, or all to remove).
+
+    A ``source_key`` of ``None`` (a "Manual entry" row) applies to every item
+    in ``item_ids`` — manual entries were never vendor-scoped. A vendor
+    ``source_key`` applies only to items with that vendor's ``ItemSource``
+    configured, mirroring add's existing subset semantics (design.md Decision
+    5/9). Batched to one query per distinct vendor among the given pairs —
+    not one query per item.
+    """
+    result = defaultdict(list)
+    if not pairs:
+        return result
+
+    manual_values = [value for source_key, value in pairs if source_key is None]
+    if manual_values:
+        for item_id in item_ids:
+            result[item_id].extend(
+                {"value": value, "source": None} for value in manual_values
+            )
+
+    values_by_vendor = defaultdict(list)
+    for source_key, value in pairs:
+        if source_key is None:
+            continue
+        values_by_vendor[source_key].append(value)
+
+    for source_key, values in values_by_vendor.items():
+        qualifying_item_ids = ItemSource.objects.filter(
+            item_id__in=item_ids, source_id=source_key
+        ).values_list("item_id", flat=True)
+        for item_id in qualifying_item_ids:
+            result[item_id].extend(
+                {"value": value, "source": source_key} for value in values
+            )
+    return result
+
+
+def _merge_expected_entries(existing, additions):
+    """Merge new ``{"value", "source"}`` entries into an item's existing
+    ``expected_product_line``/``expected_category`` list.
+
+    Deduplicates by exact ``(value, source)`` pair equality, preserving
+    first-occurrence order — the same rule ``_merge_checked_and_manual``
+    applies for the single-item form, so a vendor-scoped suggestion applied
+    twice across bulk-edit rounds never produces a duplicate entry (design.md
+    task 5.6).
+    """
+    seen = set()
+    result = []
+    for entry in (*existing, *additions):
+        key = (entry["value"], entry["source"])
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append({"value": entry["value"], "source": entry["source"]})
+    return result
+
+
+def _remove_expected_entries(existing, removals):
+    """Strip ``{"value", "source"}`` entries from an item's existing
+    ``expected_product_line``/``expected_category`` list.
+
+    Filters by exact ``(value, source)`` pair inequality — sibling to
+    ``_merge_expected_entries``, and just as much a no-op when ``existing``
+    doesn't contain a given pair (design.md Decision 9's remove action).
+    """
+    if not removals:
+        return existing
+    remove_keys = {(entry["value"], entry["source"]) for entry in removals}
+    return [
+        entry
+        for entry in existing
+        if (entry["value"], entry["source"]) not in remove_keys
+    ]
+
+
+def _merge_patterns(existing, additions):
+    """Add-if-absent merge of plain string search patterns.
+
+    Simpler than ``_merge_expected_entries``: a search pattern's provenance
+    is already the owning ``ItemSource`` row's own ``(item, source)`` FK, so
+    no ``(value, source)``-pair dedup is needed here — plain string equality
+    is enough (design.md Decision 10).
+    """
+    result = list(existing)
+    seen = set(existing)
+    for pattern in additions:
+        if pattern in seen:
+            continue
+        seen.add(pattern)
+        result.append(pattern)
+    return result
+
+
+def _remove_patterns(existing, removals):
+    """Filter-if-present removal of plain string search patterns.
+
+    Sibling to ``_merge_patterns``/``_remove_expected_entries``; a no-op for
+    any pattern not currently present.
+    """
+    if not removals:
+        return existing
+    remove_set = set(removals)
+    return [pattern for pattern in existing if pattern not in remove_set]
+
+
+def _parse_tag_states(cleaned_data):
+    """Split the per-tag tri-state fields into (add ids, remove ids)."""
+    add_ids, remove_ids = [], []
+    for key, value in cleaned_data.items():
+        if not key.startswith(TAG_STATE_PREFIX):
+            continue
+        pk = key[len(TAG_STATE_PREFIX):]
+        if value == "add":
+            add_ids.append(int(pk))
+        elif value == "remove":
+            remove_ids.append(int(pk))
+    return add_ids, remove_ids
+
+
+def _parse_expected_states(cleaned_data, prefix):
+    """Split a field's per-row tri-state fields into (add pairs, remove pairs)."""
+    add_pairs, remove_pairs = [], []
+    for key, value in cleaned_data.items():
+        if not key.startswith(prefix):
+            continue
+        pair = _parse_bulk_edit_suggestion_choice_value(key[len(prefix):])
+        if pair is None:
+            continue
+        if value == "add":
+            add_pairs.append(pair)
+        elif value == "remove":
+            remove_pairs.append(pair)
+    return add_pairs, remove_pairs
+
+
+def _parse_source_pattern_states(cleaned_data, prefix):
+    """Split a field's per-(source, pattern) tri-state fields into
+    ``{source_key: {add patterns}}`` / ``{source_key: {remove patterns}}``.
+    """
+    add_by_source = defaultdict(set)
+    remove_by_source = defaultdict(set)
+    for key, value in cleaned_data.items():
+        if not key.startswith(prefix):
+            continue
+        pair = _parse_bulk_edit_suggestion_choice_value(key[len(prefix):])
+        if pair is None:
+            continue
+        source_key, pattern = pair
+        if value == "add":
+            add_by_source[source_key].add(pattern)
+        elif value == "remove":
+            remove_by_source[source_key].add(pattern)
+    return add_by_source, remove_by_source
+
+
+def _parse_source_pattern_manual(cleaned_data, prefix):
+    """Map ``source_key`` -> new pattern lines typed into that Source's
+    manual-add textarea for one field (already regex-validated in
+    ``BulkEditItemsForm.clean``)."""
+    manual_by_source = {}
+    for key, value in cleaned_data.items():
+        if not key.startswith(prefix):
+            continue
+        source_key = key[len(prefix):]
+        lines = _lines_to_list(value)
+        if lines:
+            manual_by_source[source_key] = lines
+    return manual_by_source
+
+
+def _apply_bulk_edit_to_item(
+    item,
+    *,
+    priority,
+    active,
+    tags_add,
+    tags_remove,
+    metadata_provider_key,
+    expected_product_line_add,
+    expected_product_line_remove,
+    expected_category_add,
+    expected_category_remove,
+    touched_source_keys,
+    item_sources_by_key,
+    include_add_by_source,
+    include_remove_by_source,
+    exclude_add_by_source,
+    exclude_remove_by_source,
+):
+    update_fields = []
+    if priority is not None:
+        item.priority = priority
+        update_fields.append("priority")
+    if active is not None:
+        item.active = active
+        update_fields.append("active")
+    if expected_product_line_add or expected_product_line_remove:
+        item.expected_product_line = _merge_expected_entries(
+            _remove_expected_entries(
+                item.expected_product_line, expected_product_line_remove
+            ),
+            expected_product_line_add,
+        )
+        update_fields.append("expected_product_line")
+    if expected_category_add or expected_category_remove:
+        item.expected_category = _merge_expected_entries(
+            _remove_expected_entries(
+                item.expected_category, expected_category_remove
+            ),
+            expected_category_add,
+        )
+        update_fields.append("expected_category")
+
+    provider_changed = (
+        metadata_provider_key != BULK_EDIT_LEAVE
+        and item.metadata_provider_key != metadata_provider_key
+    )
+    if provider_changed:
+        item.metadata_provider_key = metadata_provider_key
+        update_fields.append("metadata_provider_key")
+
+    if update_fields:
+        item.save(update_fields=update_fields)
+
+    if tags_add:
+        item.tags.add(*tags_add)
+    if tags_remove:
+        item.tags.remove(*tags_remove)
+
+    for source_key in touched_source_keys:
+        item_source = item_sources_by_key.get((item.pk, source_key))
+        if item_source is None:
+            # No ItemSource for this Source on this item — left untouched,
+            # per design.md Decision 10; never create one as a side effect.
+            continue
+        item_source_fields = []
+        include_add = include_add_by_source.get(source_key, ())
+        include_remove = include_remove_by_source.get(source_key, ())
+        if include_add or include_remove:
+            item_source.title_include_patterns = _merge_patterns(
+                _remove_patterns(item_source.title_include_patterns, include_remove),
+                include_add,
+            )
+            item_source_fields.append("title_include_patterns")
+        exclude_add = exclude_add_by_source.get(source_key, ())
+        exclude_remove = exclude_remove_by_source.get(source_key, ())
+        if exclude_add or exclude_remove:
+            item_source.title_exclude_patterns = _merge_patterns(
+                _remove_patterns(item_source.title_exclude_patterns, exclude_remove),
+                exclude_add,
+            )
+            item_source_fields.append("title_exclude_patterns")
+        if item_source_fields:
+            item_source.save(update_fields=item_source_fields)
+
+    if provider_changed:
+        sync_metadata_after_save(item, provider_changed=True, text_changed=False)
+
+
+def apply_bulk_edit(item_ids, cleaned_data):
+    """Best-effort per-item apply of one bulk-edit round.
+
+    Every item in ``item_ids`` is attempted independently; one item's failure
+    does not stop the rest from being attempted (design.md Decision 7).
+    Returns a list of ``{"item", "success", "error"}`` dicts in ``item_ids``
+    order, omitting any id that no longer resolves to an existing item.
+    """
+    product_line_add_pairs, product_line_remove_pairs = _parse_expected_states(
+        cleaned_data, EXPECTED_PRODUCT_LINE_STATE_PREFIX
+    )
+    category_add_pairs, category_remove_pairs = _parse_expected_states(
+        cleaned_data, EXPECTED_CATEGORY_STATE_PREFIX
+    )
+    product_line_adds = _resolve_suggestion_subsets(item_ids, product_line_add_pairs)
+    product_line_removes = _resolve_suggestion_subsets(
+        item_ids, product_line_remove_pairs
+    )
+    category_adds = _resolve_suggestion_subsets(item_ids, category_add_pairs)
+    category_removes = _resolve_suggestion_subsets(item_ids, category_remove_pairs)
+
+    tag_add_ids, tag_remove_ids = _parse_tag_states(cleaned_data)
+    tags_by_pk = {
+        tag.pk: tag
+        for tag in Tag.objects.filter(pk__in={*tag_add_ids, *tag_remove_ids})
+    }
+    tags_add = [tags_by_pk[pk] for pk in tag_add_ids if pk in tags_by_pk]
+    tags_remove = [tags_by_pk[pk] for pk in tag_remove_ids if pk in tags_by_pk]
+
+    metadata_provider_key = cleaned_data.get("metadata_provider_key", BULK_EDIT_LEAVE)
+    priority = cleaned_data.get("priority")
+    active = cleaned_data.get("active")
+
+    include_add_by_source, include_remove_by_source = _parse_source_pattern_states(
+        cleaned_data, SOURCE_INCLUDE_STATE_PREFIX
+    )
+    exclude_add_by_source, exclude_remove_by_source = _parse_source_pattern_states(
+        cleaned_data, SOURCE_EXCLUDE_STATE_PREFIX
+    )
+    # Manual-add textarea lines join the same add-set as "add"-state
+    # tri-state rows — one apply pathway, not two (design.md Decision 10).
+    for source_key, lines in _parse_source_pattern_manual(
+        cleaned_data, SOURCE_INCLUDE_MANUAL_PREFIX
+    ).items():
+        include_add_by_source[source_key] |= set(lines)
+    for source_key, lines in _parse_source_pattern_manual(
+        cleaned_data, SOURCE_EXCLUDE_MANUAL_PREFIX
+    ).items():
+        exclude_add_by_source[source_key] |= set(lines)
+
+    touched_source_keys = (
+        set(include_add_by_source)
+        | set(include_remove_by_source)
+        | set(exclude_add_by_source)
+        | set(exclude_remove_by_source)
+    )
+    item_sources_by_key = {}
+    if touched_source_keys:
+        item_sources_by_key = {
+            (item_source.item_id, item_source.source_id): item_source
+            for item_source in ItemSource.objects.filter(
+                item_id__in=item_ids, source_id__in=touched_source_keys
+            )
+        }
+
+    items_by_pk = {
+        item.pk: item
+        for item in SearchableItem.objects.filter(pk__in=item_ids).prefetch_related("tags")
+    }
+
+    results = []
+    for pk in item_ids:
+        item = items_by_pk.get(pk)
+        if item is None:
+            continue
+        try:
+            with transaction.atomic():
+                _apply_bulk_edit_to_item(
+                    item,
+                    priority=priority,
+                    active=active,
+                    tags_add=tags_add,
+                    tags_remove=tags_remove,
+                    metadata_provider_key=metadata_provider_key,
+                    expected_product_line_add=product_line_adds.get(pk, []),
+                    expected_product_line_remove=product_line_removes.get(pk, []),
+                    expected_category_add=category_adds.get(pk, []),
+                    expected_category_remove=category_removes.get(pk, []),
+                    touched_source_keys=touched_source_keys,
+                    item_sources_by_key=item_sources_by_key,
+                    include_add_by_source=include_add_by_source,
+                    include_remove_by_source=include_remove_by_source,
+                    exclude_add_by_source=exclude_add_by_source,
+                    exclude_remove_by_source=exclude_remove_by_source,
+                )
+            results.append({"item": item, "success": True, "error": ""})
+        except Exception as exc:
+            results.append({"item": item, "success": False, "error": str(exc)})
+    return results

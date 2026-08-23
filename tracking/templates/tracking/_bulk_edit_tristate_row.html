@@ -1,0 +1,30 @@
+{% comment %}
+One add/remove/unchanged control for a bulk-edit row (a tag, a vendor-scoped
+expected value, or a manual expected value) — design.md Decision 9. Native
+radios sharing ``row.field_name`` guarantee "exactly one selected"; no
+JavaScript needed for mutual exclusivity or highlighting the active state.
+{% endcomment %}
+<div class="d-flex align-items-center justify-content-between py-1">
+    <div>
+        {{ label }}
+        {% if row.count %}
+            <div class="small text-muted">Active on {{ row.count }} / {{ row.total }} item{{ row.total|pluralize }}</div>
+        {% endif %}
+    </div>
+    <div class="btn-group btn-group-sm pe-2" role="group">
+        <input type="radio" class="btn-check" autocomplete="off"
+               name="{{ row.field_name }}" id="{{ row.field_name }}-add" value="add"
+               {% if row.selected == "add" %}checked{% endif %}>
+        <label class="btn btn-outline-success tristate-btn-soft" for="{{ row.field_name }}-add" title="Add">+</label>
+
+        <input type="radio" class="btn-check" autocomplete="off"
+               name="{{ row.field_name }}" id="{{ row.field_name }}-leave" value="__leave__"
+               {% if row.selected == "__leave__" %}checked{% endif %}>
+        <label class="btn btn-outline-secondary" for="{{ row.field_name }}-leave" title="Leave unchanged">o</label>
+
+        <input type="radio" class="btn-check" autocomplete="off"
+               name="{{ row.field_name }}" id="{{ row.field_name }}-remove" value="remove"
+               {% if row.selected == "remove" %}checked{% endif %}>
+        <label class="btn btn-outline-danger tristate-btn-soft" for="{{ row.field_name }}-remove" title="Remove">&minus;</label>
+    </div>
+</div>
