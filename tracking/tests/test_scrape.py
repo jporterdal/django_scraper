@@ -1,8 +1,9 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from django.test import RequestFactory
+from django.test import RequestFactory, TestCase
 
+from tracking import parsers
 from tracking.models import ItemSource, SearchableItem, SearchResult, Source, WebUpdate
 from tracking.scrape import FetchOutcome, run_web_update
 from tracking.tests.base import LinkedSourceTestCase
@@ -281,3 +282,64 @@ class ScrapeHeaderTests(LinkedSourceTestCase):
                 "Referer": "https://example.com/search?q=test+item",
             },
         )
+
+
+class ScrapeHandoffExpectedValuePruningTests(TestCase):
+    """expected-value-vendor-provenance — per-vendor pruning at the scrape
+    handoff (task 2.2). ``fetch_one_unit`` must build each parser instance's
+    ``expected_product_line``/``expected_category`` from
+    ``item.expected_values_for_source``, scoped to that instance's own
+    vendor — not one flat list shared across every configured vendor.
+    """
+
+    def setUp(self):
+        self.wt = make_source(key="prune-wt", parser_key="wtfilters")
+        self.f2f = make_source(key="prune-f2f", parser_key="shopify")
+        self.item = make_item()
+        make_item_source(self.item, self.wt)
+        make_item_source(self.item, self.f2f)
+        self.fetcher = MagicMock()
+
+    def _run(self):
+        mock_wt_parser = MagicMock(spec=parsers.JSONSearchParser, results=[])
+        mock_f2f_parser = MagicMock(spec=parsers.JSONSearchParser, results=[])
+        with patch("tracking.scrape._run_parser_search") as mock_run_parser:
+            mock_run_parser.return_value = FetchOutcome(
+                ok=True, http_status=200, error_message="", result_count=0
+            )
+            with patch.dict(
+                "tracking.parsers.sources",
+                {
+                    "wtfilters": MagicMock(return_value=mock_wt_parser),
+                    "shopify": MagicMock(return_value=mock_f2f_parser),
+                },
+            ):
+                run_web_update(items=[self.item], fetcher=self.fetcher)
+        return mock_wt_parser, mock_f2f_parser
+
+    def test_vendor_tagged_entry_only_prunes_its_own_vendor_instance(self):
+        self.item.expected_product_line = [{"value": "MTG", "source": "prune-wt"}]
+        self.item.save()
+
+        mock_wt_parser, mock_f2f_parser = self._run()
+
+        self.assertEqual(mock_wt_parser.expected_product_line, ["MTG"])
+        self.assertEqual(mock_f2f_parser.expected_product_line, [])
+
+    def test_manual_entry_prunes_every_configured_vendor_instance(self):
+        self.item.expected_category = [{"value": "Strixhaven", "source": None}]
+        self.item.save()
+
+        mock_wt_parser, mock_f2f_parser = self._run()
+
+        self.assertEqual(mock_wt_parser.expected_category, ["Strixhaven"])
+        self.assertEqual(mock_f2f_parser.expected_category, ["Strixhaven"])
+
+    def test_vendor_with_zero_applicable_entries_has_check_disabled(self):
+        self.item.expected_category = [{"value": "Strixhaven", "source": "prune-wt"}]
+        self.item.save()
+
+        mock_wt_parser, mock_f2f_parser = self._run()
+
+        self.assertEqual(mock_wt_parser.expected_category, ["Strixhaven"])
+        self.assertEqual(mock_f2f_parser.expected_category, [])
