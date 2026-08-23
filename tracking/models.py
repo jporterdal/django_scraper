@@ -1,10 +1,10 @@
 import copy
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import timedelta
 from urllib.parse import quote_plus
 
 from django.db import models
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.utils import timezone
 
 
@@ -670,6 +670,55 @@ def vendor_scoped_suggestions_for_items(item_ids, field_name):
         })
     groups.sort(key=lambda group: group["source"].key)
     return groups
+
+
+def tag_activity_for_items(item_ids):
+    """Map ``Tag`` pk -> how many of ``item_ids`` currently have that tag.
+
+    One batched ``Count``-over-selection query, not looped per tag — powers
+    the "Active on N items in current selection" annotation on each tag's
+    tri-state row (design.md Decision 9). Tags with a zero count within the
+    selection are simply absent from the returned mapping.
+    """
+    item_ids = list(item_ids)
+    if not item_ids:
+        return {}
+    return dict(
+        Tag.objects.filter(items__id__in=item_ids)
+        .annotate(
+            item_count=Count("items", filter=Q(items__id__in=item_ids), distinct=True)
+        )
+        .values_list("pk", "item_count")
+    )
+
+
+def expected_value_activity_for_items(item_ids, field_name):
+    """Map ``(value, source)`` -> how many of ``item_ids`` currently store it.
+
+    Fetches each selected item's stored ``expected_<field_name>`` list once
+    (one query, bounded by selection size, not one per row) and tallies in
+    Python — a ``JSONField`` list of dicts isn't portably SQL-aggregable
+    across this app's supported backends. The same pass powers both the
+    per-row "Active on N items in current selection" annotation and the
+    "Manual entry" group's membership/counts, via any ``source: None`` keys
+    in the result (design.md Decision 9).
+    """
+    item_ids = list(item_ids)
+    counts = Counter()
+    if not item_ids:
+        return counts
+    field = f"expected_{field_name}"
+    for entries in SearchableItem.objects.filter(pk__in=item_ids).values_list(
+        field, flat=True
+    ):
+        seen = set()
+        for entry in entries:
+            pair = (entry["value"], entry["source"])
+            if pair in seen:
+                continue
+            seen.add(pair)
+            counts[pair] += 1
+    return counts
 
 
 class UpdateSchedule(models.Model):

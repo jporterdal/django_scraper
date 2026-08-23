@@ -450,8 +450,6 @@ class BulkEditItemsView(View):
                 "items": items,
                 "item_ids": valid_ids,
                 "results": results,
-                "selected_product_line_values": form["expected_product_line_suggestions"].value() or [],
-                "selected_category_values": form["expected_category_suggestions"].value() or [],
             },
         )
 

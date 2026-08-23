@@ -1,5 +1,6 @@
 """bulk-item-editing — selection UI, workspace session, and per-field apply coverage."""
 
+import json
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -11,6 +12,9 @@ from django.utils import timezone
 from tracking.forms import (
     BULK_EDIT_CLEAR,
     BULK_EDIT_LEAVE,
+    EXPECTED_CATEGORY_STATE_PREFIX,
+    EXPECTED_PRODUCT_LINE_STATE_PREFIX,
+    TAG_STATE_PREFIX,
     BulkEditItemsForm,
     apply_bulk_edit,
 )
@@ -20,26 +24,44 @@ from tracking.models import (
     ObservedCategoryValue,
     SearchableItem,
     Tag,
+    expected_value_activity_for_items,
+    tag_activity_for_items,
     vendor_scoped_suggestions_for_items,
 )
 from tracking.tests.base import AuthedClientTestCase, LinkedSourceTestCase
 from tracking.tests.factories import make_item, make_item_source, make_source
 
 
-def _bulk_edit_post_data(item_ids, **overrides):
+def _bulk_edit_post_data(item_ids, extra=None, **overrides):
     data = {
         "in_workspace": "1",
         "item_ids": [str(pk) for pk in item_ids],
         "priority": BULK_EDIT_LEAVE,
         "active": BULK_EDIT_LEAVE,
-        "tags_add": [],
-        "tags_remove": [],
         "metadata_provider_key": BULK_EDIT_LEAVE,
-        "expected_product_line_suggestions": [],
-        "expected_category_suggestions": [],
     }
     data.update(overrides)
+    if extra:
+        data.update(extra)
     return data
+
+
+def _tag_state(tag_pk, state):
+    """POST-data fragment setting one tag's tri-state control."""
+    return {f"{TAG_STATE_PREFIX}{tag_pk}": state}
+
+
+def _expected_state(prefix, source_key, value, state):
+    """POST-data fragment setting one expected-value row's tri-state control."""
+    return {f"{prefix}{json.dumps([source_key, value])}": state}
+
+
+def _product_line_state(source_key, value, state):
+    return _expected_state(EXPECTED_PRODUCT_LINE_STATE_PREFIX, source_key, value, state)
+
+
+def _category_state(source_key, value, state):
+    return _expected_state(EXPECTED_CATEGORY_STATE_PREFIX, source_key, value, state)
 
 
 class SelectionUITests(LinkedSourceTestCase):
@@ -92,6 +114,45 @@ class BulkEditEntryTests(AuthedClientTestCase):
         self.assertContains(response, "Workspace Item B")
         self.assertNotContains(response, "Not Selected")
 
+    def test_workspace_renders_tag_vendor_and_manual_tristate_rows(self):
+        """Template smoke test for design.md Decision 9's tri-state rows —
+
+        one per tag, one per vendor-scoped suggestion, one per manual entry —
+        rendering without error and exposing the expected radio controls.
+        """
+        tag = Tag.objects.create(name="Render Tag")
+        vendor = make_source(key="render", parser_key="cc")
+        item = make_item(text="Render Item")
+        make_item_source(item, vendor)
+        item.expected_category = [{"value": "Render Manual", "source": None}]
+        item.save()
+        ObservedCategoryValue.objects.create(
+            source=vendor,
+            field_name="product_line",
+            value="Render Vendor Value",
+            last_seen=timezone.now(),
+        )
+
+        response = self.client.post(
+            reverse("bulk_edit_items"), {"item_ids": [str(item.pk)]}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Render Tag")
+        self.assertContains(response, "Render Vendor Value")
+        self.assertContains(response, "Render Manual")
+        self.assertContains(response, "Manual entry")
+        self.assertContains(response, f"{TAG_STATE_PREFIX}{tag.pk}-add")
+        self.assertContains(
+            response,
+            f'value="add"',
+        )
+        self.assertContains(
+            response, f"{EXPECTED_PRODUCT_LINE_STATE_PREFIX}[&quot;render&quot;"
+        )
+        self.assertContains(
+            response, f"{EXPECTED_CATEGORY_STATE_PREFIX}[null, &quot;Render Manual&quot;]"
+        )
+
 
 class WorkspaceSessionTests(AuthedClientTestCase):
     """Task 8.2 — selection persistence, per-row removal, Done."""
@@ -111,9 +172,7 @@ class WorkspaceSessionTests(AuthedClientTestCase):
 
         response2 = self.client.post(
             reverse("bulk_edit_items"),
-            _bulk_edit_post_data(
-                item_ids, tags_add=[]
-            ),
+            _bulk_edit_post_data(item_ids),
         )
         self.assertEqual(response2.status_code, 200)
         self.assertContains(response2, "Round Item A")
@@ -174,7 +233,7 @@ class LeaveUnchangedTests(TestCase):
             active=True,
         )
         item.tags.add(tag)
-        item.expected_product_line = ["Existing"]
+        item.expected_product_line = [{"value": "Existing", "source": None}]
         item.save()
 
         form = BulkEditItemsForm(
@@ -189,7 +248,7 @@ class LeaveUnchangedTests(TestCase):
         self.assertEqual(item.priority, SearchableItem.Priority.S)
         self.assertTrue(item.active)
         self.assertEqual(list(item.tags.all()), [tag])
-        self.assertEqual(item.expected_product_line, ["Existing"])
+        self.assertEqual(item.expected_product_line, [{"value": "Existing", "source": None}])
         self.assertEqual(item.metadata_provider_key, "")
 
 
@@ -242,8 +301,10 @@ class PerFieldApplyTests(TestCase):
 
         self._apply(
             [item.pk],
-            tags_add=[str(add_tag.pk)],
-            tags_remove=[str(remove_tag.pk)],
+            extra={
+                **_tag_state(add_tag.pk, "add"),
+                **_tag_state(remove_tag.pk, "remove"),
+            },
         )
         item.refresh_from_db()
         tag_names = set(item.tags.values_list("name", flat=True))
@@ -322,9 +383,7 @@ class VendorScopedSuggestionTests(TestCase):
         form = BulkEditItemsForm(
             data=_bulk_edit_post_data(
                 item_ids,
-                expected_product_line_suggestions=[
-                    '["subset", "Gadgets"]',
-                ],
+                extra=_product_line_state("subset", "Gadgets", "add"),
             ),
             item_ids=item_ids,
         )
@@ -359,7 +418,7 @@ class VendorScopedSuggestionTests(TestCase):
             form = BulkEditItemsForm(
                 data=_bulk_edit_post_data(
                     [item.pk],
-                    expected_category_suggestions=['["dedupe", "Vendor Value"]'],
+                    extra=_category_state("dedupe", "Vendor Value", "add"),
                 ),
                 item_ids=[item.pk],
             )
@@ -396,7 +455,7 @@ class VendorScopedSuggestionTests(TestCase):
         form = BulkEditItemsForm(
             data=_bulk_edit_post_data(
                 [item.pk],
-                expected_product_line_suggestions=['["tagged", "New"]'],
+                extra=_product_line_state("tagged", "New", "add"),
             ),
             item_ids=[item.pk],
         )
@@ -487,3 +546,264 @@ class QueryCountTests(TestCase):
 
         self.assertLessEqual(len(large_ctx.captured_queries), len(small_ctx.captured_queries) + 1)
         self.assertLess(len(large_ctx.captured_queries), 6)
+
+
+class TagTriStateTests(TestCase):
+    """Task 8.9 — per-tag tri-state add/remove/unchanged apply and activity counts."""
+
+    def _apply(self, item_ids, **overrides):
+        form = BulkEditItemsForm(
+            data=_bulk_edit_post_data(item_ids, **overrides), item_ids=item_ids
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        return apply_bulk_edit(item_ids, form.cleaned_data)
+
+    def test_tag_activity_counts_scoped_to_working_selection(self):
+        tag = Tag.objects.create(name="Scoped")
+        in_selection = [make_item(text=f"IN{i}") for i in range(4)]
+        out_selection = [make_item(text=f"OUT{i}") for i in range(2)]
+        for item in in_selection[:3]:
+            item.tags.add(tag)
+        for item in out_selection:
+            item.tags.add(tag)
+
+        counts = tag_activity_for_items([i.pk for i in in_selection])
+        self.assertEqual(counts.get(tag.pk), 3)
+
+    def test_tag_state_add_apply(self):
+        tag = Tag.objects.create(name="AddMe")
+        item = make_item(text="AddTagItem")
+        self._apply([item.pk], extra=_tag_state(tag.pk, "add"))
+        item.refresh_from_db()
+        self.assertIn(tag, item.tags.all())
+
+    def test_tag_state_remove_apply(self):
+        tag = Tag.objects.create(name="RemoveMe")
+        item = make_item(text="RemoveTagItem")
+        item.tags.add(tag)
+        self._apply([item.pk], extra=_tag_state(tag.pk, "remove"))
+        item.refresh_from_db()
+        self.assertNotIn(tag, item.tags.all())
+
+    def test_tag_state_unchanged_does_not_modify(self):
+        tag = Tag.objects.create(name="LeaveMe")
+        item = make_item(text="LeaveTagItem")
+        item.tags.add(tag)
+        self._apply([item.pk], extra=_tag_state(tag.pk, BULK_EDIT_LEAVE))
+        item.refresh_from_db()
+        self.assertIn(tag, item.tags.all())
+
+    def test_add_when_already_present_is_noop(self):
+        tag = Tag.objects.create(name="AlreadyThere")
+        item = make_item(text="AlreadyHasTag")
+        item.tags.add(tag)
+        self._apply([item.pk], extra=_tag_state(tag.pk, "add"))
+        item.refresh_from_db()
+        self.assertEqual(list(item.tags.all()), [tag])
+
+    def test_remove_when_absent_is_noop(self):
+        tag = Tag.objects.create(name="NeverThere")
+        item = make_item(text="NoTagItem")
+        results = self._apply([item.pk], extra=_tag_state(tag.pk, "remove"))
+        self.assertTrue(results[0]["success"])
+        item.refresh_from_db()
+        self.assertEqual(list(item.tags.all()), [])
+
+
+class ExpectedValueTriStateTests(TestCase):
+    """Task 8.10 — per-row tri-state add/remove/unchanged for expected_* rows."""
+
+    def _apply(self, item_ids, **overrides):
+        form = BulkEditItemsForm(
+            data=_bulk_edit_post_data(item_ids, **overrides), item_ids=item_ids
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        return apply_bulk_edit(item_ids, form.cleaned_data)
+
+    def test_activity_counts_and_manual_group(self):
+        vendor = make_source(key="tri", parser_key="cc")
+        item_a = make_item(text="TriA")
+        item_b = make_item(text="TriB")
+        make_item_source(item_a, vendor)
+        item_a.expected_product_line = [{"value": "Vendored", "source": "tri"}]
+        item_a.save()
+        item_b.expected_product_line = [{"value": "Manual Val", "source": None}]
+        item_b.save()
+
+        activity = expected_value_activity_for_items(
+            [item_a.pk, item_b.pk], "product_line"
+        )
+        self.assertEqual(activity[("Vendored", "tri")], 1)
+        self.assertEqual(activity[("Manual Val", None)], 1)
+
+        form = BulkEditItemsForm(item_ids=[item_a.pk, item_b.pk])
+        manual_group = next(
+            g for g in form.product_line_groups if g["label"] == "Manual entry"
+        )
+        self.assertEqual([row["value"] for row in manual_group["rows"]], ["Manual Val"])
+        self.assertEqual(manual_group["rows"][0]["count"], 1)
+
+    def test_add_applies_only_to_matching_vendor_subset(self):
+        vendor = make_source(key="addsub", parser_key="cc")
+        with_vendor = make_item(text="WithVendor")
+        without_vendor = make_item(text="WithoutVendor")
+        make_item_source(with_vendor, vendor)
+        ObservedCategoryValue.objects.create(
+            source=vendor, field_name="product_line", value="Value", last_seen=timezone.now()
+        )
+
+        self._apply(
+            [with_vendor.pk, without_vendor.pk],
+            extra=_product_line_state("addsub", "Value", "add"),
+        )
+        with_vendor.refresh_from_db()
+        without_vendor.refresh_from_db()
+        self.assertEqual(
+            with_vendor.expected_product_line, [{"value": "Value", "source": "addsub"}]
+        )
+        self.assertEqual(without_vendor.expected_product_line, [])
+
+    def test_manual_add_applies_to_every_item_regardless_of_vendor(self):
+        """A "Manual entry" row only exists for a value already present
+
+        somewhere in the selection (see design.md's Non-Goal on bulk-
+        authoring brand-new manual values); applying "add" then spreads that
+        existing value to every item in the selection, including one with no
+        vendor configured at all.
+        """
+        vendor = make_source(key="manualadd", parser_key="cc")
+        seed_item = make_item(text="SeedManual")
+        seed_item.expected_category = [{"value": "ManualCat", "source": None}]
+        seed_item.save()
+        with_vendor = make_item(text="MWithVendor")
+        without_vendor = make_item(text="MWithoutVendor")
+        make_item_source(with_vendor, vendor)
+
+        self._apply(
+            [seed_item.pk, with_vendor.pk, without_vendor.pk],
+            extra=_category_state(None, "ManualCat", "add"),
+        )
+        with_vendor.refresh_from_db()
+        without_vendor.refresh_from_db()
+        self.assertEqual(
+            with_vendor.expected_category, [{"value": "ManualCat", "source": None}]
+        )
+        self.assertEqual(
+            without_vendor.expected_category, [{"value": "ManualCat", "source": None}]
+        )
+
+    def test_remove_strips_only_exact_pair_leaves_others_untouched(self):
+        vendor = make_source(key="rmvendor", parser_key="cc")
+        item = make_item(text="RemovePairItem")
+        make_item_source(item, vendor)
+        item.expected_product_line = [
+            {"value": "Keep", "source": "rmvendor"},
+            {"value": "Gone", "source": "rmvendor"},
+        ]
+        item.save()
+        ObservedCategoryValue.objects.create(
+            source=vendor, field_name="product_line", value="Gone", last_seen=timezone.now()
+        )
+
+        self._apply([item.pk], extra=_product_line_state("rmvendor", "Gone", "remove"))
+        item.refresh_from_db()
+        self.assertEqual(
+            item.expected_product_line, [{"value": "Keep", "source": "rmvendor"}]
+        )
+
+    def test_remove_gated_by_vendor_configuration(self):
+        vendor = make_source(key="gaterm", parser_key="cc")
+        with_vendor = make_item(text="GateWith")
+        without_vendor = make_item(text="GateWithout")
+        make_item_source(with_vendor, vendor)
+        for item in (with_vendor, without_vendor):
+            item.expected_product_line = [{"value": "Stale", "source": "gaterm"}]
+            item.save()
+        ObservedCategoryValue.objects.create(
+            source=vendor, field_name="product_line", value="Stale", last_seen=timezone.now()
+        )
+
+        self._apply(
+            [with_vendor.pk, without_vendor.pk],
+            extra=_product_line_state("gaterm", "Stale", "remove"),
+        )
+        with_vendor.refresh_from_db()
+        without_vendor.refresh_from_db()
+        self.assertEqual(with_vendor.expected_product_line, [])
+        self.assertEqual(
+            without_vendor.expected_product_line, [{"value": "Stale", "source": "gaterm"}]
+        )
+
+    def test_manual_remove_applies_to_every_item_that_has_it(self):
+        item_a = make_item(text="ManRemA")
+        item_b = make_item(text="ManRemB")
+        item_a.expected_category = [{"value": "Foil", "source": None}]
+        item_a.save()
+        item_b.expected_category = [{"value": "Foil", "source": None}]
+        item_b.save()
+
+        self._apply([item_a.pk, item_b.pk], extra=_category_state(None, "Foil", "remove"))
+        item_a.refresh_from_db()
+        item_b.refresh_from_db()
+        self.assertEqual(item_a.expected_category, [])
+        self.assertEqual(item_b.expected_category, [])
+
+    def test_add_when_already_present_is_noop(self):
+        item = make_item(text="AlreadyHasValue")
+        item.expected_category = [{"value": "Existing", "source": None}]
+        item.save()
+        self._apply([item.pk], extra=_category_state(None, "Existing", "add"))
+        item.refresh_from_db()
+        self.assertEqual(item.expected_category, [{"value": "Existing", "source": None}])
+
+    def test_remove_when_absent_is_noop(self):
+        has_value = make_item(text="HasValueForRow")
+        has_value.expected_category = [{"value": "Nothing", "source": None}]
+        has_value.save()
+        lacks_value = make_item(text="LacksValueForRow")
+
+        results = self._apply(
+            [has_value.pk, lacks_value.pk],
+            extra=_category_state(None, "Nothing", "remove"),
+        )
+        self.assertTrue(all(r["success"] for r in results))
+        has_value.refresh_from_db()
+        lacks_value.refresh_from_db()
+        self.assertEqual(has_value.expected_category, [])
+        self.assertEqual(lacks_value.expected_category, [])
+
+
+class ActivityHelperQueryCountTests(TestCase):
+    """Task 8.11 — tag/expected-value activity helpers stay bounded, not linear
+    in selection size, extending task 8.7's discipline to the new helpers.
+    """
+
+    def test_tag_activity_query_count_bounded(self):
+        Tag.objects.create(name="Q1")
+        Tag.objects.create(name="Q2")
+        small_items = [make_item(text=f"TS{i}") for i in range(3)]
+        large_items = [make_item(text=f"TL{i}") for i in range(40)]
+
+        with CaptureQueriesContext(connection) as small_ctx:
+            tag_activity_for_items([i.pk for i in small_items])
+        with CaptureQueriesContext(connection) as large_ctx:
+            tag_activity_for_items([i.pk for i in large_items])
+
+        self.assertEqual(len(small_ctx.captured_queries), 1)
+        self.assertEqual(len(large_ctx.captured_queries), 1)
+
+    def test_expected_value_activity_query_count_bounded(self):
+        small_items = [make_item(text=f"ES{i}") for i in range(3)]
+        large_items = [make_item(text=f"EL{i}") for i in range(40)]
+
+        with CaptureQueriesContext(connection) as small_ctx:
+            expected_value_activity_for_items(
+                [i.pk for i in small_items], "product_line"
+            )
+        with CaptureQueriesContext(connection) as large_ctx:
+            expected_value_activity_for_items(
+                [i.pk for i in large_items], "product_line"
+            )
+
+        self.assertEqual(len(small_ctx.captured_queries), 1)
+        self.assertEqual(len(large_ctx.captured_queries), 1)

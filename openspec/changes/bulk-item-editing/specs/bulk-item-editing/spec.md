@@ -91,7 +91,7 @@ The workspace SHALL offer one control per `Tag` in the system, each presenting e
 - **THEN** that item's tags are unaffected — no error, no duplicate, no-op
 
 ### Requirement: Each per-row tri-state control shows how many selected items currently hold that value
-For every row offered by a tri-state control — a tag, a vendor-scoped expected value, or a manual expected value — the workspace SHALL display how many items in the current working selection already have that value, worded "Active on N items in current selection," whenever N is at least 1. When N is 0, no such annotation SHALL be shown for that row.
+For every row offered by a tri-state control — a tag, a vendor-scoped expected value, a manual expected value, or a Source-scoped include/exclude search pattern — the workspace SHALL display how many items in the current working selection already have that value, worded "Active on N items in current selection," whenever N is at least 1. When N is 0, no such annotation SHALL be shown for that row.
 
 #### Scenario: Tag annotation reflects the current selection, not every item in the system
 - **WHEN** a tag is applied to 6 items total in the system, 4 of which are in the current working selection of 10
@@ -189,3 +189,52 @@ This capability SHALL NOT detect or specially handle the case where an item in t
 #### Scenario: An apply round proceeds without concurrency detection
 - **WHEN** an item in the working selection has been modified by another process since it was selected, and an apply round runs against the working selection including that item
 - **THEN** the apply round proceeds using the current per-item application logic with no concurrency check specific to this capability; the resulting behavior is whatever the ordinary per-item save path produces, not a specially-detected conflict
+
+### Requirement: Include/exclude search patterns are grouped by Source across the selection, by union
+For the working selection, the workspace SHALL compute the set of `Source`s present via any selected item's configured `ItemSource`, with no minimum-shared-item threshold — a `Source` present on even one selected item SHALL get its own group. Each group SHALL be labeled with the `Source`'s `name` and how many of the working selection's items have that `Source` configured. Each group SHALL offer two subsections, Include and Exclude, each listing one row per distinct pattern present in that field (`title_include_patterns`/`title_exclude_patterns`) on any selected item's `ItemSource` for that `Source`. A subsection with no such patterns SHALL display an explicit "No patterns defined" note rather than rendering empty.
+
+#### Scenario: A Source used by one item still gets a group
+- **WHEN** the working selection has 20 items and exactly 1 of them has an `ItemSource` configured against Source `amazon`
+- **THEN** a Search-patterns group for `amazon` is shown, labeled with its name and indicating it applies to 1 of the 20 selected items
+
+#### Scenario: Pattern rows are sourced from the selection's own ItemSource rows, not a separate taxonomy
+- **WHEN** two different items in the working selection each have an `ItemSource` for Source `cc`, one with `title_include_patterns` containing `"Foil"` and the other with `"Booster"`
+- **THEN** the `cc` group's Include subsection offers rows for both `"Foil"` and `"Booster"`
+
+#### Scenario: An empty subsection is announced explicitly
+- **WHEN** a Source group's Exclude subsection has no patterns configured on any selected item's `ItemSource` for that Source
+- **THEN** that subsection displays "No patterns defined" instead of rendering with no rows and no message
+
+### Requirement: Include/exclude search pattern rows apply as add/remove via a tri-state control, scoped to items with a matching Source
+Each row offered under a Source group's Include or Exclude subsection SHALL present the same three mutually exclusive states as tag and expected-value rows — add, remove, leave unchanged — defaulting to leave unchanged. On apply, a row set to add or remove SHALL only affect items in the working selection that have that Source's `ItemSource` configured; items without it SHALL be unaffected by that row and SHALL NOT have an `ItemSource` created as a side effect. Add SHALL append the pattern to the affected `ItemSource`'s corresponding field if not already present; remove SHALL strip it if present. An item's other patterns in that field, and its patterns in the other field, SHALL never be replaced or discarded as a side effect.
+
+#### Scenario: Add applies only to items with the matching Source
+- **WHEN** the working selection has 20 items, 8 of which have Source `wt` configured, and the operator sets a `wt` Include-pattern row to "add" and applies
+- **THEN** exactly those 8 items' `ItemSource` rows for `wt` have the pattern added to `title_include_patterns`; the other 12 items are unaffected by this row
+
+#### Scenario: Remove strips only the specified pattern from items that have it
+- **WHEN** 8 selected items have Source `wt` configured with `"Used"` in `title_exclude_patterns`, and the operator sets that row to "remove" and applies
+- **THEN** those 8 items' `wt` `ItemSource` rows no longer have `"Used"` in `title_exclude_patterns`; every other pattern on those rows, and every other item, is unaffected
+
+#### Scenario: Applying a row preserves an item's other existing patterns
+- **WHEN** an item's `ItemSource` for a Source already has an unrelated pattern in `title_include_patterns`, and a different Include-pattern row for that Source is set to "add" and applied to that item
+- **THEN** the item's `title_include_patterns` contains both the pre-existing pattern and the newly added one
+
+#### Scenario: Add and remove are idempotent
+- **WHEN** a row is set to "add" and applied against an `ItemSource` that already has that exact pattern, or set to "remove" and applied against one that never had it
+- **THEN** that `ItemSource`'s patterns are unaffected — no error, no duplicate, no-op
+
+### Requirement: New include/exclude search patterns can be authored via free text, scoped to items with a matching Source
+Each Source group's Include and Exclude subsection SHALL offer a free-text control (one pattern per line) for adding patterns not already present on any selected item, in addition to the tri-state rows over existing patterns. Each line SHALL be validated as a regular expression; an invalid pattern SHALL be reported back to the operator without being applied. On apply, every valid line SHALL be added to the corresponding field of every item in the working selection that has that Source's `ItemSource` configured, using the same add semantics (append-if-absent) as the tri-state add action. This control is intentionally offered for include/exclude search patterns despite the equivalent being out of scope for `expected_product_line`/`expected_category` (see that capability's free-text Non-Goal) — search patterns have no system-observed suggestion source to fall back on.
+
+#### Scenario: A newly typed pattern is added only to items with the matching Source
+- **WHEN** the working selection has 20 items, 5 of which have Source `cc` configured, and the operator types a new pattern into `cc`'s Include free-text field and applies
+- **THEN** exactly those 5 items' `cc` `ItemSource` rows have the new pattern added to `title_include_patterns`; the other 15 items are unaffected
+
+#### Scenario: An invalid regex is rejected without being applied
+- **WHEN** an operator types a syntactically invalid regular expression into a Source's free-text pattern field and applies
+- **THEN** no item's patterns are modified as a result of that field, and the invalid pattern is reported back to the operator
+
+#### Scenario: Free-text add is idempotent with existing patterns
+- **WHEN** an operator types a pattern into a Source's free-text field that some selected items' matching `ItemSource` already has
+- **THEN** those items' patterns are unaffected by the free-text add — no duplicate is created

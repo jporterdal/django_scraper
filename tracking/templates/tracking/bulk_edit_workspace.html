@@ -2,6 +2,23 @@
 
 {% block title %}Bulk Edit Items{% endblock %}
 
+{% block extra_css %}
+    <style>
+        /* Soften just the tri-state add/remove buttons' saturation and
+           brightness — not Bootstrap's global success/danger colors, which
+           stay at full strength for ordinary Add/Delete buttons elsewhere
+           in the app. Multiplies against whatever the active theme (light
+           or dark, see base.html's theme toggle) already resolves those
+           colors to, so no separate light/dark hex values to maintain.
+           Reduces a perceptual effect (chromostereopsis) where a fully
+           saturated red border can appear to sit at a slightly different
+           depth than its neighbors against this app's dark theme. */
+        .tristate-btn-soft {
+            filter: saturate(0.6) brightness(0.94);
+        }
+    </style>
+{% endblock %}
+
 {% block content %}
     <h1 class="text-center mb-4">Bulk Edit Items</h1>
 
@@ -82,8 +99,7 @@
                             <div class="alert alert-danger">{{ form.non_field_errors }}</div>
                         {% endif %}
 
-                        {% for field in form %}
-                            {% if field.name != "expected_product_line_suggestions" and field.name != "expected_category_suggestions" %}
+                        {% for field in form.leading_fields %}
                             <div class="mb-3">
                                 <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>
                                 {{ field }}
@@ -94,66 +110,77 @@
                                     <div class="text-danger small">{{ field.errors }}</div>
                                 {% endif %}
                             </div>
-                            {% endif %}
                         {% endfor %}
 
                         <div class="mb-3">
-                            <label class="form-label">{{ form.expected_product_line_suggestions.label }}</label>
-                            {% if form.product_line_choice_groups %}
+                            <label class="form-label">Tags</label>
+                            <div class="form-text mb-2">
+                                One add/remove/unchanged control per tag — never a full replace.
+                            </div>
+                            {% if form.tag_rows %}
                                 <div class="border rounded p-2" style="max-height: 14rem; overflow-y: auto;">
-                                    {% for group in form.product_line_choice_groups %}
-                                        <div class="mb-2">
-                                            <div class="small text-muted fw-bold">
-                                                {{ group.source.key }} — {{ group.item_count }} of {{ items|length }} selected items
-                                            </div>
-                                            {% for choice_value, raw_value in group.choices %}
-                                                <div class="form-check">
-                                                    <input type="checkbox" class="form-check-input"
-                                                           name="expected_product_line_suggestions"
-                                                           id="pl-{{ group.source.key }}-{{ forloop.counter }}"
-                                                           value="{{ choice_value }}"
-                                                           {% if choice_value in selected_product_line_values %}checked{% endif %}>
-                                                    <label class="form-check-label" for="pl-{{ group.source.key }}-{{ forloop.counter }}">{{ raw_value }}</label>
-                                                </div>
-                                            {% endfor %}
-                                        </div>
+                                    {% for row in form.tag_rows %}
+                                        {% include "tracking/_bulk_edit_tristate_row.html" with row=row label=row.tag.name %}
                                     {% endfor %}
                                 </div>
                             {% else %}
-                                <p class="text-muted small mb-0">No vendor-observed suggestions for this selection.</p>
-                            {% endif %}
-                            {% if form.expected_product_line_suggestions.help_text %}
-                                <div class="form-text">{{ form.expected_product_line_suggestions.help_text }}</div>
+                                <p class="text-muted small mb-0">No tags exist yet.</p>
                             {% endif %}
                         </div>
 
                         <div class="mb-3">
-                            <label class="form-label">{{ form.expected_category_suggestions.label }}</label>
-                            {% if form.category_choice_groups %}
+                            <label class="form-label">Expected product line</label>
+                            <div class="form-text mb-2">
+                                Grouped by vendor (plus Manual entry for values already present in the
+                                selection). Add applies only to items with that vendor configured — or
+                                every item, for a Manual entry row; remove strips the exact stored value.
+                            </div>
+                            {% if form.product_line_groups %}
                                 <div class="border rounded p-2" style="max-height: 14rem; overflow-y: auto;">
-                                    {% for group in form.category_choice_groups %}
+                                    {% for group in form.product_line_groups %}
                                         <div class="mb-2">
                                             <div class="small text-muted fw-bold">
-                                                {{ group.source.key }} — {{ group.item_count }} of {{ items|length }} selected items
+                                                {{ group.label }}
+                                                {% if group.item_count is not None %}
+                                                    — {{ group.item_count }} of {{ items|length }} selected items
+                                                {% endif %}
                                             </div>
-                                            {% for choice_value, raw_value in group.choices %}
-                                                <div class="form-check">
-                                                    <input type="checkbox" class="form-check-input"
-                                                           name="expected_category_suggestions"
-                                                           id="cat-{{ group.source.key }}-{{ forloop.counter }}"
-                                                           value="{{ choice_value }}"
-                                                           {% if choice_value in selected_category_values %}checked{% endif %}>
-                                                    <label class="form-check-label" for="cat-{{ group.source.key }}-{{ forloop.counter }}">{{ raw_value }}</label>
-                                                </div>
+                                            {% for row in group.rows %}
+                                                {% include "tracking/_bulk_edit_tristate_row.html" with row=row label=row.value %}
                                             {% endfor %}
                                         </div>
                                     {% endfor %}
                                 </div>
                             {% else %}
-                                <p class="text-muted small mb-0">No vendor-observed suggestions for this selection.</p>
+                                <p class="text-muted small mb-0">No vendor-observed or manual suggestions for this selection.</p>
                             {% endif %}
-                            {% if form.expected_category_suggestions.help_text %}
-                                <div class="form-text">{{ form.expected_category_suggestions.help_text }}</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Expected category</label>
+                            <div class="form-text mb-2">
+                                Grouped by vendor (plus Manual entry for values already present in the
+                                selection). Add applies only to items with that vendor configured — or
+                                every item, for a Manual entry row; remove strips the exact stored value.
+                            </div>
+                            {% if form.category_groups %}
+                                <div class="border rounded p-2" style="max-height: 14rem; overflow-y: auto;">
+                                    {% for group in form.category_groups %}
+                                        <div class="mb-2">
+                                            <div class="small text-muted fw-bold">
+                                                {{ group.label }}
+                                                {% if group.item_count is not None %}
+                                                    — {{ group.item_count }} of {{ items|length }} selected items
+                                                {% endif %}
+                                            </div>
+                                            {% for row in group.rows %}
+                                                {% include "tracking/_bulk_edit_tristate_row.html" with row=row label=row.value %}
+                                            {% endfor %}
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <p class="text-muted small mb-0">No vendor-observed or manual suggestions for this selection.</p>
                             {% endif %}
                         </div>
 

@@ -15,7 +15,9 @@ from .models import (
     Source,
     Tag,
     UpdateSchedule,
+    expected_value_activity_for_items,
     observed_values_for_item,
+    tag_activity_for_items,
     vendor_scoped_suggestions_for_items,
 )
 from .parsers import sources as parser_registry
@@ -29,6 +31,19 @@ from .ratelimit import PROFILE_CHOICES as rate_limit_profile_choices
 # from "field absent from this POST" — both collapse to "" in cleaned_data.
 BULK_EDIT_LEAVE = "__leave__"
 BULK_EDIT_CLEAR = "__clear__"
+
+# One tri-state control per row (tag, or expected_* vendor/manual value) —
+# add / remove / leave unchanged, defaulting to leave unchanged (design.md
+# Decision 9). Field names are name-spaced per prefix below so each row gets
+# its own radio group.
+BULK_EDIT_TRISTATE_CHOICES = [
+    (BULK_EDIT_LEAVE, "Unchanged"),
+    ("add", "Add"),
+    ("remove", "Remove"),
+]
+TAG_STATE_PREFIX = "tag_state:"
+EXPECTED_PRODUCT_LINE_STATE_PREFIX = "expected_product_line_state:"
+EXPECTED_CATEGORY_STATE_PREFIX = "expected_category_state:"
 
 # Sentinel for BulkAddItemsForm "No tag" choice (distinct from unchosen "").
 BULK_ADD_TAG_NONE = "__none__"
@@ -746,6 +761,12 @@ class BulkEditItemsForm(forms.Form):
     """Combined bulk-edit form for the workspace; every field defaults to
     "leave unchanged" (see ``BULK_EDIT_LEAVE``), so an apply round only
     touches the fields the operator explicitly set away from that default.
+
+    ``tags`` and ``expected_product_line``/``expected_category`` are each
+    backed by dynamically-named tri-state fields added in ``__init__`` — one
+    per ``Tag``, and one per vendor-scoped or "Manual entry" suggestion row
+    (design.md Decision 9) — rather than static fields, since the row
+    universe is computed per selection.
     """
 
     priority = forms.ChoiceField(choices=[], required=False, label="Priority")
@@ -758,39 +779,11 @@ class BulkEditItemsForm(forms.Form):
         required=False,
         label="Active",
     )
-    tags_add = forms.ModelMultipleChoiceField(
-        queryset=Tag.objects.all(),
-        required=False,
-        label="Add tags",
-    )
-    tags_remove = forms.ModelMultipleChoiceField(
-        queryset=Tag.objects.all(),
-        required=False,
-        label="Remove tags",
-    )
     metadata_provider_key = forms.ChoiceField(
         choices=[],
         required=False,
         label="Metadata provider",
         help_text=METADATA_PROVIDER_HELP_TEXT,
-    )
-    expected_product_line_suggestions = forms.MultipleChoiceField(
-        required=False,
-        widget=forms.CheckboxSelectMultiple,
-        label="Add expected product line",
-        help_text=(
-            "Checking a suggestion adds it only to selected items that have "
-            "that vendor configured; other items in the selection are unaffected."
-        ),
-    )
-    expected_category_suggestions = forms.MultipleChoiceField(
-        required=False,
-        widget=forms.CheckboxSelectMultiple,
-        label="Add expected category",
-        help_text=(
-            "Checking a suggestion adds it only to selected items that have "
-            "that vendor configured; other items in the selection are unaffected."
-        ),
     )
 
     def __init__(self, *args, item_ids=None, **kwargs):
@@ -810,41 +803,86 @@ class BulkEditItemsForm(forms.Form):
         self.initial.setdefault("active", BULK_EDIT_LEAVE)
         self.initial.setdefault("metadata_provider_key", BULK_EDIT_LEAVE)
 
-        self.product_line_choice_groups = self._build_choice_groups(
-            vendor_scoped_suggestions_for_items(self.item_ids, "product_line")
+        self.tag_rows = self._build_tag_rows()
+        self.product_line_groups = self._build_expected_state_groups(
+            "product_line", EXPECTED_PRODUCT_LINE_STATE_PREFIX
         )
-        self.category_choice_groups = self._build_choice_groups(
-            vendor_scoped_suggestions_for_items(self.item_ids, "category")
+        self.category_groups = self._build_expected_state_groups(
+            "category", EXPECTED_CATEGORY_STATE_PREFIX
         )
-        self.fields["expected_product_line_suggestions"].choices = [
-            choice
-            for group in self.product_line_choice_groups
-            for choice in group["choices"]
-        ]
-        self.fields["expected_category_suggestions"].choices = [
-            choice
-            for group in self.category_choice_groups
-            for choice in group["choices"]
-        ]
 
         _apply_bootstrap_form_classes(self)
 
-    @staticmethod
-    def _build_choice_groups(groups):
-        return [
-            {
-                "source": group["source"],
-                "item_count": group["item_count"],
-                "choices": [
-                    (
-                        _bulk_edit_suggestion_choice_value(group["source"].key, value),
-                        value,
-                    )
-                    for value in group["values"]
-                ],
-            }
-            for group in groups
-        ]
+    @property
+    def leading_fields(self):
+        """The plain (non-tri-state) fields, in display order.
+
+        Kept distinct from ``self.fields`` because iterating the latter would
+        also surface every dynamically-added tag/expected-value tri-state
+        field, which the template renders separately via
+        ``tag_rows``/``product_line_groups``/``category_groups``.
+        """
+        return [self["priority"], self["active"], self["metadata_provider_key"]]
+
+    def _add_tristate_field(self, name):
+        self.fields[name] = forms.ChoiceField(
+            choices=BULK_EDIT_TRISTATE_CHOICES,
+            required=False,
+            initial=BULK_EDIT_LEAVE,
+            widget=forms.RadioSelect,
+        )
+        return {"field_name": name, "selected": self[name].value() or BULK_EDIT_LEAVE}
+
+    def _build_tag_rows(self):
+        counts = tag_activity_for_items(self.item_ids)
+        rows = []
+        for tag in Tag.objects.order_by(Lower("name")):
+            row = self._add_tristate_field(f"{TAG_STATE_PREFIX}{tag.pk}")
+            row["tag"] = tag
+            row["count"] = counts.get(tag.pk, 0)
+            rows.append(row)
+        return rows
+
+    def _build_expected_state_groups(self, field_name, prefix):
+        vendor_groups = vendor_scoped_suggestions_for_items(self.item_ids, field_name)
+        activity = expected_value_activity_for_items(self.item_ids, field_name)
+
+        groups = []
+        for group in vendor_groups:
+            source_key = group["source"].key
+            rows = []
+            for value in group["values"]:
+                row = self._add_tristate_field(
+                    prefix + _bulk_edit_suggestion_choice_value(source_key, value)
+                )
+                row["value"] = value
+                row["count"] = activity.get((value, source_key), 0)
+                rows.append(row)
+            groups.append(
+                {
+                    "label": source_key,
+                    "item_count": group["item_count"],
+                    "rows": rows,
+                }
+            )
+
+        manual_values = sorted(
+            {value for (value, source) in activity if source is None}
+        )
+        manual_rows = []
+        for value in manual_values:
+            row = self._add_tristate_field(
+                prefix + _bulk_edit_suggestion_choice_value(None, value)
+            )
+            row["value"] = value
+            row["count"] = activity.get((value, None), 0)
+            manual_rows.append(row)
+        if manual_rows:
+            groups.append(
+                {"label": "Manual entry", "item_count": None, "rows": manual_rows}
+            )
+
+        return groups
 
     def clean_priority(self):
         value = self.cleaned_data.get("priority")
@@ -868,44 +906,33 @@ class BulkEditItemsForm(forms.Form):
             return ""
         return value
 
-    def clean_expected_product_line_suggestions(self):
-        return self._parse_suggestions(
-            self.cleaned_data.get("expected_product_line_suggestions")
-        )
 
-    def clean_expected_category_suggestions(self):
-        return self._parse_suggestions(
-            self.cleaned_data.get("expected_category_suggestions")
-        )
+def _resolve_suggestion_subsets(item_ids, pairs):
+    """Map item pk -> list of ``{"value", "source"}`` entries, for a set of
+    ``(source_key, value)`` pairs (either all to add, or all to remove).
 
-    @staticmethod
-    def _parse_suggestions(raw_values):
-        parsed = []
-        for raw in raw_values or []:
-            pair = _parse_bulk_edit_suggestion_choice_value(raw)
-            if pair is not None:
-                parsed.append(pair)
-        return parsed
-
-
-def _resolve_suggestion_subsets(item_ids, suggestions):
-    """Map item pk -> list of ``{"value", "source"}`` entries to add, for
-    vendor-scoped suggestions.
-
-    ``suggestions`` is a list of ``(source_key, value)`` pairs. Batched to one
-    query per distinct vendor among the checked suggestions — not one query
-    per item (see design.md's query-count requirement). Each resolved entry
-    keeps the vendor it was checked under as its ``source``, matching the
-    ``{"value", "source"}`` storage the expected-value-vendor-provenance
-    capability requires (design.md's "Known Follow-up", task 5.6) — a
-    checked suggestion is never merged in as a bare string.
+    A ``source_key`` of ``None`` (a "Manual entry" row) applies to every item
+    in ``item_ids`` — manual entries were never vendor-scoped. A vendor
+    ``source_key`` applies only to items with that vendor's ``ItemSource``
+    configured, mirroring add's existing subset semantics (design.md Decision
+    5/9). Batched to one query per distinct vendor among the given pairs —
+    not one query per item.
     """
     result = defaultdict(list)
-    if not suggestions:
+    if not pairs:
         return result
 
+    manual_values = [value for source_key, value in pairs if source_key is None]
+    if manual_values:
+        for item_id in item_ids:
+            result[item_id].extend(
+                {"value": value, "source": None} for value in manual_values
+            )
+
     values_by_vendor = defaultdict(list)
-    for source_key, value in suggestions:
+    for source_key, value in pairs:
+        if source_key is None:
+            continue
         values_by_vendor[source_key].append(value)
 
     for source_key, values in values_by_vendor.items():
@@ -940,6 +967,54 @@ def _merge_expected_entries(existing, additions):
     return result
 
 
+def _remove_expected_entries(existing, removals):
+    """Strip ``{"value", "source"}`` entries from an item's existing
+    ``expected_product_line``/``expected_category`` list.
+
+    Filters by exact ``(value, source)`` pair inequality — sibling to
+    ``_merge_expected_entries``, and just as much a no-op when ``existing``
+    doesn't contain a given pair (design.md Decision 9's remove action).
+    """
+    if not removals:
+        return existing
+    remove_keys = {(entry["value"], entry["source"]) for entry in removals}
+    return [
+        entry
+        for entry in existing
+        if (entry["value"], entry["source"]) not in remove_keys
+    ]
+
+
+def _parse_tag_states(cleaned_data):
+    """Split the per-tag tri-state fields into (add ids, remove ids)."""
+    add_ids, remove_ids = [], []
+    for key, value in cleaned_data.items():
+        if not key.startswith(TAG_STATE_PREFIX):
+            continue
+        pk = key[len(TAG_STATE_PREFIX):]
+        if value == "add":
+            add_ids.append(int(pk))
+        elif value == "remove":
+            remove_ids.append(int(pk))
+    return add_ids, remove_ids
+
+
+def _parse_expected_states(cleaned_data, prefix):
+    """Split a field's per-row tri-state fields into (add pairs, remove pairs)."""
+    add_pairs, remove_pairs = [], []
+    for key, value in cleaned_data.items():
+        if not key.startswith(prefix):
+            continue
+        pair = _parse_bulk_edit_suggestion_choice_value(key[len(prefix):])
+        if pair is None:
+            continue
+        if value == "add":
+            add_pairs.append(pair)
+        elif value == "remove":
+            remove_pairs.append(pair)
+    return add_pairs, remove_pairs
+
+
 def _apply_bulk_edit_to_item(
     item,
     *,
@@ -949,7 +1024,9 @@ def _apply_bulk_edit_to_item(
     tags_remove,
     metadata_provider_key,
     expected_product_line_add,
+    expected_product_line_remove,
     expected_category_add,
+    expected_category_remove,
 ):
     update_fields = []
     if priority is not None:
@@ -958,14 +1035,20 @@ def _apply_bulk_edit_to_item(
     if active is not None:
         item.active = active
         update_fields.append("active")
-    if expected_product_line_add:
+    if expected_product_line_add or expected_product_line_remove:
         item.expected_product_line = _merge_expected_entries(
-            item.expected_product_line, expected_product_line_add
+            _remove_expected_entries(
+                item.expected_product_line, expected_product_line_remove
+            ),
+            expected_product_line_add,
         )
         update_fields.append("expected_product_line")
-    if expected_category_add:
+    if expected_category_add or expected_category_remove:
         item.expected_category = _merge_expected_entries(
-            item.expected_category, expected_category_add
+            _remove_expected_entries(
+                item.expected_category, expected_category_remove
+            ),
+            expected_category_add,
         )
         update_fields.append("expected_category")
 
@@ -997,14 +1080,27 @@ def apply_bulk_edit(item_ids, cleaned_data):
     Returns a list of ``{"item", "success", "error"}`` dicts in ``item_ids``
     order, omitting any id that no longer resolves to an existing item.
     """
-    product_line_adds = _resolve_suggestion_subsets(
-        item_ids, cleaned_data.get("expected_product_line_suggestions")
+    product_line_add_pairs, product_line_remove_pairs = _parse_expected_states(
+        cleaned_data, EXPECTED_PRODUCT_LINE_STATE_PREFIX
     )
-    category_adds = _resolve_suggestion_subsets(
-        item_ids, cleaned_data.get("expected_category_suggestions")
+    category_add_pairs, category_remove_pairs = _parse_expected_states(
+        cleaned_data, EXPECTED_CATEGORY_STATE_PREFIX
     )
-    tags_add = list(cleaned_data.get("tags_add") or [])
-    tags_remove = list(cleaned_data.get("tags_remove") or [])
+    product_line_adds = _resolve_suggestion_subsets(item_ids, product_line_add_pairs)
+    product_line_removes = _resolve_suggestion_subsets(
+        item_ids, product_line_remove_pairs
+    )
+    category_adds = _resolve_suggestion_subsets(item_ids, category_add_pairs)
+    category_removes = _resolve_suggestion_subsets(item_ids, category_remove_pairs)
+
+    tag_add_ids, tag_remove_ids = _parse_tag_states(cleaned_data)
+    tags_by_pk = {
+        tag.pk: tag
+        for tag in Tag.objects.filter(pk__in={*tag_add_ids, *tag_remove_ids})
+    }
+    tags_add = [tags_by_pk[pk] for pk in tag_add_ids if pk in tags_by_pk]
+    tags_remove = [tags_by_pk[pk] for pk in tag_remove_ids if pk in tags_by_pk]
+
     metadata_provider_key = cleaned_data.get("metadata_provider_key", BULK_EDIT_LEAVE)
     priority = cleaned_data.get("priority")
     active = cleaned_data.get("active")
@@ -1029,7 +1125,9 @@ def apply_bulk_edit(item_ids, cleaned_data):
                     tags_remove=tags_remove,
                     metadata_provider_key=metadata_provider_key,
                     expected_product_line_add=product_line_adds.get(pk, []),
+                    expected_product_line_remove=product_line_removes.get(pk, []),
                     expected_category_add=category_adds.get(pk, []),
+                    expected_category_remove=category_removes.get(pk, []),
                 )
             results.append({"item": item, "success": True, "error": ""})
         except Exception as exc:
