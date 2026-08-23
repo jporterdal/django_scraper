@@ -1,8 +1,10 @@
 import copy
+from collections import Counter, defaultdict
 from datetime import timedelta
 from urllib.parse import quote_plus
 
 from django.db import models
+from django.db.models import Count, Q
 from django.utils import timezone
 
 
@@ -186,10 +188,14 @@ class SearchableItem(models.Model):
         default=list,
         blank=True,
         verbose_name=(
-            "Expected product line(s) (e.g. ['Magic'], or ['Magic', 'MTG'] when "
-            "vendors word it differently) — a result must contain at least one "
-            "listed value to disambiguate this item from a same-titled item in "
-            "an unrelated product line. Empty list disables this check."
+            "Expected product line(s), each a {'value': str, 'source': str|None} "
+            "entry (e.g. {'value': 'Magic', 'source': None}, or one entry per "
+            "vendor when vendors word it differently) — a result from vendor V "
+            "must contain at least one of V's applicable values (V's own tagged "
+            "entries plus every source=None/manual entry) to disambiguate this "
+            "item from a same-titled item in an unrelated product line. A vendor "
+            "with no applicable entries has this check disabled for its own "
+            "rows. See expected-value-vendor-provenance design.md."
         ),
     )
 
@@ -197,13 +203,31 @@ class SearchableItem(models.Model):
         default=list,
         blank=True,
         verbose_name=(
-            "Expected category/set value(s) (e.g. a specific MTG set, possibly "
-            "spelled differently per vendor) — a result must contain at least "
-            "one listed value to narrow results beyond product-line "
-            "disambiguation. Independent of expected product line; empty list "
-            "disables this check."
+            "Expected category/set value(s), each a {'value': str, 'source': "
+            "str|None} entry (e.g. a specific MTG set, possibly spelled "
+            "differently per vendor) — a result from vendor V must contain at "
+            "least one of V's applicable values (V's own tagged entries plus "
+            "every source=None/manual entry) to narrow results beyond "
+            "product-line disambiguation. Independent of expected product "
+            "line. A vendor with no applicable entries has this check disabled "
+            "for its own rows. See expected-value-vendor-provenance design.md."
         ),
     )
+
+    def expected_values_for_source(self, field_name, source_key):
+        """Applicable ``expected_<field_name>`` values for one vendor's rows.
+
+        Returns that vendor's own tagged entries' values plus every
+        ``source: null`` (manual) entry's value — the per-vendor pruning
+        used at the scrape handoff (see design.md Decision 2). ``field_name``
+        is ``"product_line"`` or ``"category"``.
+        """
+        entries = getattr(self, f"expected_{field_name}")
+        return [
+            entry["value"]
+            for entry in entries
+            if entry["source"] == source_key or entry["source"] is None
+        ]
 
     metadata_provider_key = models.CharField(
         max_length=20,
@@ -591,6 +615,186 @@ def observed_values_for_item(item, field_name):
         .order_by("-last_seen")
         .values_list("source__key", "value")
     )
+
+
+def vendor_scoped_suggestions_for_items(item_ids, field_name):
+    """Vendor-grouped ``ObservedCategoryValue`` suggestions across a selection.
+
+    For every vendor (``Source``) configured via any of ``item_ids``'s
+    ``ItemSource``s, returns one group with that vendor's item-count within
+    the selection and its distinct observed ``field_name`` values (most
+    recently observed first). Unlike ``observed_values_for_item`` (scoped to
+    one item's sources with no count), there is no minimum-shared-item
+    threshold — a vendor used by a single selected item still gets its own
+    group, per the bulk-item-editing design.
+
+    Batched to a bounded number of queries regardless of selection size: one
+    query for vendor/count, one for suggestion values — not looped per item.
+    """
+    item_ids = list(item_ids)
+    if not item_ids:
+        return []
+
+    vendor_counts = list(
+        ItemSource.objects.filter(item_id__in=item_ids)
+        .values("source_id")
+        .annotate(item_count=Count("item_id", distinct=True))
+        .order_by("source_id")
+    )
+    if not vendor_counts:
+        return []
+
+    source_ids = [row["source_id"] for row in vendor_counts]
+    counts_by_source = {row["source_id"]: row["item_count"] for row in vendor_counts}
+    sources_by_id = {s.pk: s for s in Source.objects.filter(pk__in=source_ids)}
+
+    values_by_source = defaultdict(list)
+    for source_id, value in (
+        ObservedCategoryValue.objects.filter(
+            source_id__in=source_ids, field_name=field_name
+        )
+        .order_by("source_id", "-last_seen")
+        .values_list("source_id", "value")
+    ):
+        values_by_source[source_id].append(value)
+
+    groups = []
+    for source_id in source_ids:
+        source = sources_by_id.get(source_id)
+        if source is None:
+            continue
+        groups.append({
+            "source": source,
+            "item_count": counts_by_source[source_id],
+            "values": values_by_source.get(source_id, []),
+        })
+    groups.sort(key=lambda group: group["source"].key)
+    return groups
+
+
+def tag_activity_for_items(item_ids):
+    """Map ``Tag`` pk -> how many of ``item_ids`` currently have that tag.
+
+    One batched ``Count``-over-selection query, not looped per tag — powers
+    the "Active on N items in current selection" annotation on each tag's
+    tri-state row (design.md Decision 9). Tags with a zero count within the
+    selection are simply absent from the returned mapping.
+    """
+    item_ids = list(item_ids)
+    if not item_ids:
+        return {}
+    return dict(
+        Tag.objects.filter(items__id__in=item_ids)
+        .annotate(
+            item_count=Count("items", filter=Q(items__id__in=item_ids), distinct=True)
+        )
+        .values_list("pk", "item_count")
+    )
+
+
+def expected_value_activity_for_items(item_ids, field_name):
+    """Map ``(value, source)`` -> how many of ``item_ids`` currently store it.
+
+    Fetches each selected item's stored ``expected_<field_name>`` list once
+    (one query, bounded by selection size, not one per row) and tallies in
+    Python — a ``JSONField`` list of dicts isn't portably SQL-aggregable
+    across this app's supported backends. The same pass powers both the
+    per-row "Active on N items in current selection" annotation and the
+    "Manual entry" group's membership/counts, via any ``source: None`` keys
+    in the result (design.md Decision 9).
+    """
+    item_ids = list(item_ids)
+    counts = Counter()
+    if not item_ids:
+        return counts
+    field = f"expected_{field_name}"
+    for entries in SearchableItem.objects.filter(pk__in=item_ids).values_list(
+        field, flat=True
+    ):
+        seen = set()
+        for entry in entries:
+            pair = (entry["value"], entry["source"])
+            if pair in seen:
+                continue
+            seen.add(pair)
+            counts[pair] += 1
+    return counts
+
+
+def source_pattern_groups_for_items(item_ids):
+    """Source-grouped include/exclude search-pattern rows across a selection.
+
+    For every ``Source`` present via any of ``item_ids``'s ``ItemSource``s
+    (union, no minimum-shared-item threshold — same rule as
+    ``vendor_scoped_suggestions_for_items``), returns one group with that
+    Source's item-count within the selection and, separately for
+    ``title_include_patterns``/``title_exclude_patterns``, the distinct
+    patterns configured on any selected item's ``ItemSource`` for that
+    Source, each paired with how many selected items currently have that
+    exact pattern (design.md Decision 10). Unlike the ``expected_*``
+    vendor-scoped suggestions, there is no ``ObservedCategoryValue``-style
+    external taxonomy — every row here is sourced from the selection's own
+    ``ItemSource`` rows, so one query supplies both the candidate patterns
+    and their counts.
+
+    Batched to a bounded number of queries regardless of selection size: one
+    query fetching every selected ``ItemSource`` row's patterns (tallied in
+    Python — a ``JSONField`` list isn't portably SQL-aggregable across this
+    app's supported backends), one for the ``Source`` objects themselves —
+    not looped per item. Groups are sorted by ``Source.name`` (this section's
+    display label, chosen over ``key`` for readability — see design.md).
+    """
+    item_ids = list(item_ids)
+    if not item_ids:
+        return []
+
+    item_ids_by_source = defaultdict(set)
+    include_counts = defaultdict(Counter)
+    exclude_counts = defaultdict(Counter)
+    include_order = defaultdict(list)
+    exclude_order = defaultdict(list)
+
+    for item_id, source_id, include_patterns, exclude_patterns in ItemSource.objects.filter(
+        item_id__in=item_ids
+    ).values_list(
+        "item_id", "source_id", "title_include_patterns", "title_exclude_patterns"
+    ):
+        item_ids_by_source[source_id].add(item_id)
+        for pattern in include_patterns:
+            if pattern not in include_counts[source_id]:
+                include_order[source_id].append(pattern)
+            include_counts[source_id][pattern] += 1
+        for pattern in exclude_patterns:
+            if pattern not in exclude_counts[source_id]:
+                exclude_order[source_id].append(pattern)
+            exclude_counts[source_id][pattern] += 1
+
+    if not item_ids_by_source:
+        return []
+
+    sources_by_id = {
+        s.pk: s for s in Source.objects.filter(pk__in=item_ids_by_source.keys())
+    }
+
+    groups = []
+    for source_id, selected_item_ids in item_ids_by_source.items():
+        source = sources_by_id.get(source_id)
+        if source is None:
+            continue
+        groups.append({
+            "source": source,
+            "item_count": len(selected_item_ids),
+            "include_patterns": [
+                (pattern, include_counts[source_id][pattern])
+                for pattern in include_order[source_id]
+            ],
+            "exclude_patterns": [
+                (pattern, exclude_counts[source_id][pattern])
+                for pattern in exclude_order[source_id]
+            ],
+        })
+    groups.sort(key=lambda group: group["source"].name.lower())
+    return groups
 
 
 class UpdateSchedule(models.Model):

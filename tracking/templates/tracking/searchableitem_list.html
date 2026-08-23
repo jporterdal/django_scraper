@@ -35,6 +35,7 @@
                     <a href="{% url 'view_sources' %}" class="btn btn-outline-primary btn-sm">Manage Sources</a>
                     <button type="submit" name="mode" value="selected" class="btn btn-warning btn-sm">Update Selected</button>
                     <button type="submit" name="mode" value="all" class="btn btn-outline-warning btn-sm">Update All Active</button>
+                    <button type="submit" formaction="{% url 'bulk_edit_items' %}" class="btn btn-outline-warning btn-sm">Bulk Edit Selected</button>
                     <a href="{% url 'view_schedules' %}" class="btn btn-outline-primary btn-sm">Schedules</a>
                     <a href="{% url 'view_updates' %}" class="btn btn-outline-secondary btn-sm">Scrape History</a>
                 </div>
@@ -78,7 +79,7 @@
                         <thead>
                             <tr>
                                 <th style="width: 2.5rem;">
-                                    <input type="checkbox" id="selectAll" class="form-check-input" title="Select all active items">
+                                    <input type="checkbox" id="selectAll" class="form-check-input" title="Select all items">
                                 </th>
                                 <th>Search Term</th>
                                 <th>Tags</th>
@@ -92,9 +93,7 @@
                             {% for item in object_list %}
                             <tr class="{% if not item.active %}table-secondary{% endif %}">
                                 <td>
-                                    {% if item.active %}
-                                        <input type="checkbox" name="item_ids" value="{{ item.pk }}" class="form-check-input item-checkbox">
-                                    {% endif %}
+                                    <input type="checkbox" name="item_ids" value="{{ item.pk }}" class="form-check-input item-checkbox">
                                 </td>
                                 <td>
                                     {% if item.metadata_thumbnail_url %}

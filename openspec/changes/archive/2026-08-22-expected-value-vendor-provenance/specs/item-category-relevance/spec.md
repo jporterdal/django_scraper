@@ -1,10 +1,47 @@
-# item-category-relevance
+## MODIFIED Requirements
 
-## Purpose
+### Requirement: Item form offers vendor-labeled checkbox suggestions plus inline manual entries for both fields
+The `SearchableItem` create/edit form SHALL offer non-binding suggestions for both `expected_product_line` and `expected_category` as one checkbox per distinct `ObservedCategoryValue` entry (not `SearchResult`) matching `field_name="product_line"` and `field_name="category"` respectively, scoped to the `Source`s used by the item's own configured `ItemSource`s. Each checkbox's identity SHALL be the `(source, value)` pair it represents, not the bare value alone — so two vendors reporting the identical raw value SHALL render as two independently checkable/uncheckable checkboxes, and checking or unchecking one SHALL have no effect on the other. A stored entry with `source: null` (a manually added value) SHALL render as its own row inline alongside vendor-sourced suggestion rows, labeled with a fixed "Manual entry" signpost, rather than in a separate free-text block. The form SHALL also offer a mechanism to add a new value not present among the current suggestions, stored with `source: null`. On save, the field's stored list SHALL be exactly the set of checked `(source, value)` pairs plus any newly added manual values (each stored as `{value, source: null}`), deduplicated by exact `(value, source)` pair equality — not by value alone. Suggestions SHALL NOT constrain or validate an entered value — any plain-text value SHALL remain acceptable regardless of whether it appears in the suggestion list.
 
-Lets a `SearchableItem` declare the product line(s) (e.g. "Magic", "MTG") and/or category/set(s) (e.g. "Strixhaven") it belongs to, and has `JSONSearchParser` reject vendor rows that don't match at least one listed value per non-empty field. This narrows results beyond term-relevance filtering alone, catching same-titled items from unrelated product lines or sets. Observed raw vendor values are logged independent of filtering outcome so the item form can offer them back to the operator as vendor-labeled suggestion checkboxes, alongside free-text manual entry.
+#### Scenario: Operator sees suggestions scoped to the item's configured vendors
+- **WHEN** an item has `ItemSource`s configured against `wt` and `f2f`, and `ObservedCategoryValue` rows already exist with various `product_line` and `category` values for `wt` and `f2f` (and unrelated values for other vendors from other items)
+- **THEN** the form's suggestion checkboxes for that item include only distinct `(source, value)` pairs observed for `wt` and `f2f`, not values observed only for other vendors
 
-## Requirements
+#### Scenario: The same value observed from two vendors renders as two labeled checkboxes
+- **WHEN** both `wt` and `f2f` have an `ObservedCategoryValue` row with `field_name="product_line"` and the identical `value`, `"Magic: The Gathering"`
+- **THEN** the form renders two separate checkboxes for `expected_product_line`, one representing `(wt, "Magic: The Gathering")` and one representing `(f2f, "Magic: The Gathering")`, each independently checkable
+
+#### Scenario: Checking suggestions from two different vendors stores two independent entries
+- **WHEN** an operator checks both the `wt`-labeled and `f2f`-labeled checkboxes described above (identical value `"Magic: The Gathering"`) and saves the form
+- **THEN** the item's `expected_product_line` list contains two entries: `{"value": "Magic: The Gathering", "source": "wt"}` and `{"value": "Magic: The Gathering", "source": "f2f"}` — not one deduplicated string
+
+#### Scenario: Unchecking one of two same-valued vendor checkboxes removes only that vendor's entry
+- **WHEN** an item's `expected_product_line` already contains both `{"value": "MTG", "source": "wt"}` and `{"value": "MTG", "source": "f2f"}` from a prior save, and an operator unchecks only the `wt`-labeled checkbox (leaving the `f2f`-labeled one checked) and saves
+- **THEN** the item's `expected_product_line` contains only `{"value": "MTG", "source": "f2f"}` — the `wt` entry is removed and the `f2f` entry is untouched
+
+#### Scenario: A newly added manual value not in the suggestion list is stored
+- **WHEN** an operator uses the form's add-a-value mechanism to add `"MTG"`, a value not present in any current suggestion checkbox, and saves
+- **THEN** `"MTG"` is added to the item's `expected_product_line` list as `{"value": "MTG", "source": null}`, alongside any checked vendor suggestions
+
+#### Scenario: A value from a rejected row still appears as a suggestion
+- **WHEN** an item's `expected_product_line` includes an entry with value `"Magic"`, a prior fetch for that item's vendor returned and rejected a same-titled Lorcana row (so no matching `SearchResult` row exists), and the operator is now editing a *different* item configured against the same vendor
+- **THEN** `"Lorcana"` (or whatever raw value was observed) still appears as a suggestion checkbox for that vendor's `product_line` field, because it was recorded in `ObservedCategoryValue` at parse time independent of the rejection
+
+#### Scenario: Re-editing an item pre-checks only the checkbox matching the stored entry's exact vendor
+- **WHEN** an item's stored `expected_product_line` contains `{"value": "Magic: The Gathering", "source": "wt"}` only, and both `wt` and `f2f` have a suggestion checkbox for that identical value (per the two-checkbox scenario above)
+- **THEN** only the `wt`-labeled checkbox is pre-checked when the edit form loads; the `f2f`-labeled checkbox is not pre-checked, even though it shares the same raw value
+
+#### Scenario: A manually entered value is never reclassified as a vendor suggestion
+- **WHEN** an item has a stored entry `{"value": "MTG", "source": null}`, and a vendor later reports the identical raw string `"MTG"` as a newly observed `ObservedCategoryValue`
+- **THEN** the manual entry still renders as its own "Manual entry" row on next edit, distinct from that vendor's now-available suggestion checkbox (which renders separately, unchecked, since it represents a different stored pair)
+
+#### Scenario: A stored vendor-tagged entry whose vendor no longer offers a live suggestion still renders and remains editable
+- **WHEN** an item's stored `expected_product_line` contains `{"value": "Some Old Value", "source": "wt"}`, and `wt` no longer has an `ObservedCategoryValue` row for that exact value (e.g. the vendor's wording changed)
+- **THEN** that entry still renders as its own checked row labeled `wt` when the edit form loads, remains individually removable via its own row, rather than being silently dropped from the form
+
+#### Scenario: No suggestions exist yet
+- **WHEN** an item has no `ItemSource`s configured, or its configured vendors have no `ObservedCategoryValue` rows yet (e.g. no fetch has run since this change shipped, and no backfill migration has populated `category` from prior history)
+- **THEN** the form's suggestion checkboxes for the affected field are absent, and the manual add-a-value mechanism remains available with no error
 
 ### Requirement: SearchableItem may specify one or more expected product lines
 `SearchableItem` SHALL have an optional, list-valued field, `expected_product_line`, a user can populate with zero or more `{"value": <str>, "source": <str|null>}` entries to indicate the game or product line(s) the item belongs to (e.g. a value `"Magic"`, or both `"Magic"` and `"MTG"` when vendors use divergent wording for the same product line). This field SHALL be an empty list by default. Each entry's `source` determines which vendor's rows it is matched against — a vendor-tagged entry (added via that vendor's suggestion checkbox) applies only to that vendor's rows; an entry with `source: null` (added via manual entry) applies to every vendor configured for the item. See "Parser results must match at least one expected product line when the list is non-empty" for the full matching contract.
@@ -39,17 +76,6 @@ Lets a `SearchableItem` declare the product line(s) (e.g. "Magic", "MTG") and/or
 #### Scenario: Item has no expected category set
 - **WHEN** an item's `expected_category` list has never been populated
 - **THEN** it is an empty list by default, regardless of whether `expected_product_line` is non-empty
-
-### Requirement: Expected product-line and category entries record vendor provenance, or none for manual entries
-Each entry in `SearchableItem.expected_product_line`/`expected_category` SHALL be a `{"value": <str>, "source": <str|null>}` pair. `source` SHALL hold the `Source.key` of the vendor whose suggestion checkbox the operator checked to add that entry, or `null` when the entry was added via the form's manual add-a-value mechanism rather than a suggestion checkbox.
-
-#### Scenario: A vendor-checked suggestion is tagged with that vendor
-- **WHEN** an operator checks the `wt`-labeled suggestion checkbox for `"MTG"` and saves
-- **THEN** the item's `expected_product_line` contains `{"value": "MTG", "source": "wt"}`
-
-#### Scenario: A manually added value is tagged with no vendor
-- **WHEN** an operator adds `"MTG"` via the manual add-a-value mechanism, not a suggestion checkbox, and saves
-- **THEN** the item's `expected_product_line` contains `{"value": "MTG", "source": null}`
 
 ### Requirement: Parser results must match at least one expected product line when the list is non-empty
 For a candidate row parsed from vendor `V`, define the row's *applicable expected product line values* as the subset of the owning item's `expected_product_line` entries whose `source` equals `V`'s `Source.key`, plus every entry whose `source` is `null` (these apply to every vendor). `JSONSearchParser` SHALL reject a candidate row — omit it from `self.results` — when its applicable expected product line values are non-empty and **none** of them appear as a normalized (case-folded, whitespace-collapsed) substring of the row's product-line signal (a per-row value each vendor-specific parser supplies; see design.md for the exact signal used per vendor). A row passes this check if **any** applicable value matches (OR within the field). An item's `expected_product_line` entries tagged for a *different* vendor than the row's own SHALL NOT be considered for that row — a vendor with zero applicable entries SHALL have this check disabled entirely for its rows, even when the item has entries tagged for other vendors. This check SHALL run inside the shared `add_result` method, alongside and independent of the term-relevance check added by `search-term-relevance-filter` and the expected-category check below.
@@ -120,95 +146,15 @@ For a candidate row parsed from vendor `V`, when both `expected_product_line` an
 - **WHEN** an item's `expected_product_line` contains `{"value": "Magic", "source": null}` and `{"value": "MTG", "source": null}`, and `expected_category` contains `{"value": "Strixhaven", "source": null}`, and a candidate row's product-line signal is `"MTG Singles"` (matching the second value) and its category signal is `"Strixhaven - Mystical Archive"`
 - **THEN** the row is included in `self.results` (subject to also passing the term-relevance check)
 
-### Requirement: Expected product-line and category values are plain text, not regex
-Every value in `expected_product_line` and `expected_category` SHALL be matched as literal text, not interpreted as a regular expression — a user's input SHALL NOT need to be regex-safe (e.g. literal parentheses or other regex metacharacters in any listed value must not change matching behavior or raise an error).
+## ADDED Requirements
 
-#### Scenario: A listed value containing regex metacharacters matches literally
-- **WHEN** an item's `expected_product_line` is `["Magic (Core Set)"]` and a candidate row's product-line signal is `"Magic (Core Set) Singles"`
-- **THEN** the row is included in `self.results`, with the parentheses treated as literal characters, not a regex group
+### Requirement: Expected product-line and category entries record vendor provenance, or none for manual entries
+Each entry in `SearchableItem.expected_product_line`/`expected_category` SHALL be a `{"value": <str>, "source": <str|null>}` pair. `source` SHALL hold the `Source.key` of the vendor whose suggestion checkbox the operator checked to add that entry, or `null` when the entry was added via the form's manual add-a-value mechanism rather than a suggestion checkbox.
 
-### Requirement: Vendor-specific JSONSearchParser subclasses supply both signals with no per-parser filtering logic
-`WtFiltersParser`, `ShopifyParser`, and `StorepassParser` SHALL each extract their vendor's own per-row product-line signal (newly wired by this change) and category signal (already extracted today) and pass both through to the shared `add_result` check; the comparison logic itself — including the list-valued, OR-within-field matching — SHALL be implemented once on `JSONSearchParser` and inherited, not duplicated per subclass.
+#### Scenario: A vendor-checked suggestion is tagged with that vendor
+- **WHEN** an operator checks the `wt`-labeled suggestion checkbox for `"MTG"` and saves
+- **THEN** the item's `expected_product_line` contains `{"value": "MTG", "source": "wt"}`
 
-#### Scenario: WtFiltersParser drops a same-title, different-product-line row
-- **WHEN** `WtFiltersParser` is configured for an item with `expected_product_line` `["Magic"]` and parses a vendor response containing both a genuine Magic: the Gathering row and a same-titled row from an unrelated product line
-- **THEN** `parser.results` contains only the Magic: the Gathering row
-
-#### Scenario: ShopifyParser drops a same-title, different-product-line row
-*(Illustrative — mirrors the WtFiltersParser scenario for the f2f payload shape.)*
-- **WHEN** `ShopifyParser` is configured for an item with `expected_product_line` `["Magic"]` and parses a vendor response containing both a genuine Magic: the Gathering hit and a same-titled hit from an unrelated product line
-- **THEN** `parser.results` contains only the Magic: the Gathering hit
-
-#### Scenario: StorepassParser drops a same-title, different-product-line row
-*(Illustrative — mirrors the WtFiltersParser scenario for the hfx payload shape.)*
-- **WHEN** `StorepassParser` is configured for an item with `expected_product_line` `["Magic"]` and parses a vendor response containing both a genuine Magic: the Gathering product and a same-titled product from an unrelated product line
-- **THEN** `parser.results` contains only the Magic: the Gathering product
-
-### Requirement: Product-line signal is persisted and displayed alongside category
-`SearchResult` SHALL have a `product_line` column, populated from the per-row product-line signal supplied by the parser at storage time, displayed in `searchableitem_detail.html` and included in the CSV/JSON export field set (`EXPORT_FIELDNAMES`) alongside the existing `category` column. This column holds a single value per row, unaffected by the list-valued shape of `SearchableItem.expected_product_line`.
-
-#### Scenario: Stored result exposes its product-line value
-- **WHEN** a fetch stores a `SearchResult` row whose parsed product-line signal was `"Magic the Gathering Singles"`
-- **THEN** `SearchResult.product_line` is `"Magic the Gathering Singles"`, visible in the item detail view and present in CSV/JSON export output
-
-### Requirement: Rejected rows do not raise or fail the fetch
-Filtering a row for product-line or category relevance SHALL NOT raise an exception or mark the parse as failed; it is routine filtering, not a parse error, consistent with the enforcement posture of the term-relevance check added by `search-term-relevance-filter`.
-
-#### Scenario: A response containing only non-matching rows still parses successfully
-- **WHEN** a parser's vendor response contains zero rows whose product-line signal, category signal, or both (per whichever of the item's expected-value lists are non-empty) match at least one of the item's listed expectations
-- **THEN** `parse_response`/`parse_data` completes normally and `self.results` is an empty list (which the existing `FetchJob.Status.EMPTY` handling in `tracking/scrape.py` already covers)
-
-### Requirement: Every parsed row's category and product-line signals are recorded, regardless of filtering outcome
-`JSONSearchParser.add_result` SHALL record each non-blank raw `category` and `product_line` signal it receives into a per-vendor observation log (`ObservedCategoryValue`: `source`, `field_name`, `value`, `last_seen`), for **every** row processed — before, and independent of, whether that row goes on to pass or fail the term-relevance, `expected_product_line`, or `expected_category` checks. A repeat observation of the same `(source, field_name, value)` SHALL update `last_seen` rather than create a duplicate row.
-
-#### Scenario: An accepted row's signals are recorded
-- **WHEN** `WtFiltersParser` parses a row whose title matches the search term and whose product-line/category signals also satisfy the item's expected values (the row is appended to `self.results`)
-- **THEN** an `ObservedCategoryValue` row exists (or has its `last_seen` updated) for `wt`/`"product_line"`/that row's product-line value, and likewise for `"category"`
-
-#### Scenario: A rejected row's signals are still recorded
-- **WHEN** `WtFiltersParser` parses a row whose product-line signal does not contain any of the item's non-empty `expected_product_line` list (the row is omitted from `self.results`)
-- **THEN** an `ObservedCategoryValue` row still exists (or has its `last_seen` updated) for that vendor/field/value, even though the row itself never reaches `self.results` or `SearchResult`
-
-### Requirement: Item form offers vendor-labeled checkbox suggestions plus inline manual entries for both fields
-The `SearchableItem` create/edit form SHALL offer non-binding suggestions for both `expected_product_line` and `expected_category` as one checkbox per distinct `ObservedCategoryValue` entry (not `SearchResult`) matching `field_name="product_line"` and `field_name="category"` respectively, scoped to the `Source`s used by the item's own configured `ItemSource`s. Each checkbox's identity SHALL be the `(source, value)` pair it represents, not the bare value alone — so two vendors reporting the identical raw value SHALL render as two independently checkable/uncheckable checkboxes, and checking or unchecking one SHALL have no effect on the other. A stored entry with `source: null` (a manually added value) SHALL render as its own row inline alongside vendor-sourced suggestion rows, labeled with a fixed "Manual entry" signpost, rather than in a separate free-text block. The form SHALL also offer a mechanism to add a new value not present among the current suggestions, stored with `source: null`. On save, the field's stored list SHALL be exactly the set of checked `(source, value)` pairs plus any newly added manual values (each stored as `{value, source: null}`), deduplicated by exact `(value, source)` pair equality — not by value alone. Suggestions SHALL NOT constrain or validate an entered value — any plain-text value SHALL remain acceptable regardless of whether it appears in the suggestion list.
-
-#### Scenario: Operator sees suggestions scoped to the item's configured vendors
-- **WHEN** an item has `ItemSource`s configured against `wt` and `f2f`, and `ObservedCategoryValue` rows already exist with various `product_line` and `category` values for `wt` and `f2f` (and unrelated values for other vendors from other items)
-- **THEN** the form's suggestion checkboxes for that item include only distinct `(source, value)` pairs observed for `wt` and `f2f`, not values observed only for other vendors
-
-#### Scenario: The same value observed from two vendors renders as two labeled checkboxes
-- **WHEN** both `wt` and `f2f` have an `ObservedCategoryValue` row with `field_name="product_line"` and the identical `value`, `"Magic: The Gathering"`
-- **THEN** the form renders two separate checkboxes for `expected_product_line`, one representing `(wt, "Magic: The Gathering")` and one representing `(f2f, "Magic: The Gathering")`, each independently checkable
-
-#### Scenario: Checking suggestions from two different vendors stores two independent entries
-- **WHEN** an operator checks both the `wt`-labeled and `f2f`-labeled checkboxes described above (identical value `"Magic: The Gathering"`) and saves the form
-- **THEN** the item's `expected_product_line` list contains two entries: `{"value": "Magic: The Gathering", "source": "wt"}` and `{"value": "Magic: The Gathering", "source": "f2f"}` — not one deduplicated string
-
-#### Scenario: Unchecking one of two same-valued vendor checkboxes removes only that vendor's entry
-- **WHEN** an item's `expected_product_line` already contains both `{"value": "MTG", "source": "wt"}` and `{"value": "MTG", "source": "f2f"}` from a prior save, and an operator unchecks only the `wt`-labeled checkbox (leaving the `f2f`-labeled one checked) and saves
-- **THEN** the item's `expected_product_line` contains only `{"value": "MTG", "source": "f2f"}` — the `wt` entry is removed and the `f2f` entry is untouched
-
-#### Scenario: A newly added manual value not in the suggestion list is stored
-- **WHEN** an operator uses the form's add-a-value mechanism to add `"MTG"`, a value not present in any current suggestion checkbox, and saves
-- **THEN** `"MTG"` is added to the item's `expected_product_line` list as `{"value": "MTG", "source": null}`, alongside any checked vendor suggestions
-
-#### Scenario: A value from a rejected row still appears as a suggestion
-- **WHEN** an item's `expected_product_line` includes an entry with value `"Magic"`, a prior fetch for that item's vendor returned and rejected a same-titled Lorcana row (so no matching `SearchResult` row exists), and the operator is now editing a *different* item configured against the same vendor
-- **THEN** `"Lorcana"` (or whatever raw value was observed) still appears as a suggestion checkbox for that vendor's `product_line` field, because it was recorded in `ObservedCategoryValue` at parse time independent of the rejection
-
-#### Scenario: Re-editing an item pre-checks only the checkbox matching the stored entry's exact vendor
-- **WHEN** an item's stored `expected_product_line` contains `{"value": "Magic: The Gathering", "source": "wt"}` only, and both `wt` and `f2f` have a suggestion checkbox for that identical value (per the two-checkbox scenario above)
-- **THEN** only the `wt`-labeled checkbox is pre-checked when the edit form loads; the `f2f`-labeled checkbox is not pre-checked, even though it shares the same raw value
-
-#### Scenario: A manually entered value is never reclassified as a vendor suggestion
-- **WHEN** an item has a stored entry `{"value": "MTG", "source": null}`, and a vendor later reports the identical raw string `"MTG"` as a newly observed `ObservedCategoryValue`
-- **THEN** the manual entry still renders as its own "Manual entry" row on next edit, distinct from that vendor's now-available suggestion checkbox (which renders separately, unchecked, since it represents a different stored pair)
-
-#### Scenario: A stored vendor-tagged entry whose vendor no longer offers a live suggestion still renders and remains editable
-- **WHEN** an item's stored `expected_product_line` contains `{"value": "Some Old Value", "source": "wt"}`, and `wt` no longer has an `ObservedCategoryValue` row for that exact value (e.g. the vendor's wording changed)
-- **THEN** that entry still renders as its own checked row labeled `wt` when the edit form loads, remains individually removable via its own row, rather than being silently dropped from the form
-
-#### Scenario: No suggestions exist yet
-- **WHEN** an item has no `ItemSource`s configured, or its configured vendors have no `ObservedCategoryValue` rows yet (e.g. no fetch has run since this change shipped, and no backfill migration has populated `category` from prior history)
-- **THEN** the form's suggestion checkboxes for the affected field are absent, and the manual add-a-value mechanism remains available with no error
-</content>
+#### Scenario: A manually added value is tagged with no vendor
+- **WHEN** an operator adds `"MTG"` via the manual add-a-value mechanism, not a suggestion checkbox, and saves
+- **THEN** the item's `expected_product_line` contains `{"value": "MTG", "source": null}`
