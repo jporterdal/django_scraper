@@ -184,6 +184,55 @@
                             {% endif %}
                         </div>
 
+                        <div class="mb-3">
+                            <label class="form-label">Search patterns</label>
+                            <div class="form-text mb-2">
+                                Grouped by Source (union across the selection). Add/remove apply
+                                only to items with that Source configured — new patterns typed
+                                below are added to every valid item in that Source.
+                            </div>
+                            {% if form.source_pattern_groups %}
+                                {% for group in form.source_pattern_groups %}
+                                    <div class="border rounded p-2 mb-2">
+                                        <div class="small text-muted fw-bold mb-2">
+                                            {{ group.source.name }}
+                                            — {{ group.item_count }} of {{ items|length }} selected items configured
+                                        </div>
+                                        <div class="row">
+                                            <div class="col-md-6 mb-2 mb-md-0">
+                                                <div class="small fw-semibold mb-1">Include</div>
+                                                {% if group.include_rows %}
+                                                    <div style="max-height: 14rem; overflow-y: auto;">
+                                                        {% for row in group.include_rows %}
+                                                            {% include "tracking/_bulk_edit_tristate_row.html" with row=row label=row.value %}
+                                                        {% endfor %}
+                                                    </div>
+                                                {% else %}
+                                                    <p class="text-muted small mb-0">No patterns defined.</p>
+                                                {% endif %}
+                                                {% include "tracking/_bulk_edit_pattern_manual_row.html" with field=group.include_manual_field %}
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="small fw-semibold mb-1">Exclude</div>
+                                                {% if group.exclude_rows %}
+                                                    <div style="max-height: 14rem; overflow-y: auto;">
+                                                        {% for row in group.exclude_rows %}
+                                                            {% include "tracking/_bulk_edit_tristate_row.html" with row=row label=row.value %}
+                                                        {% endfor %}
+                                                    </div>
+                                                {% else %}
+                                                    <p class="text-muted small mb-0">No patterns defined.</p>
+                                                {% endif %}
+                                                {% include "tracking/_bulk_edit_pattern_manual_row.html" with field=group.exclude_manual_field %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            {% else %}
+                                <p class="text-muted small mb-0">No source is configured for any item in this selection.</p>
+                            {% endif %}
+                        </div>
+
                         <button type="submit" class="btn btn-primary">Apply</button>
                     </form>
                 </div>

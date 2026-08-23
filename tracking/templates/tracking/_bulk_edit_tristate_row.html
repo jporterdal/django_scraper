@@ -8,7 +8,7 @@ JavaScript needed for mutual exclusivity or highlighting the active state.
     <div>
         {{ label }}
         {% if row.count %}
-            <div class="small text-muted">Active on {{ row.count }} item{{ row.count|pluralize }} in current selection</div>
+            <div class="small text-muted">Active on {{ row.count }} / {{ row.total }} item{{ row.total|pluralize }}</div>
         {% endif %}
     </div>
     <div class="btn-group btn-group-sm pe-2" role="group">

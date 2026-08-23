@@ -1,0 +1,20 @@
+{% comment %}
+Free-text add path for a Source's include/exclude patterns (design.md
+Decision 10) — the structural analogue of a tri-state row's "add" (+) state,
+but non-interactive: typed lines are always added, never removed or left
+unchanged, since there is nothing yet stored to leave unchanged. Reuses the
+tri-state row's own disabled/checked radio + label markup and
+``.tristate-btn-soft`` styling rather than inventing a new visual cue.
+{% endcomment %}
+<div class="d-flex align-items-start justify-content-between py-1">
+    <div class="flex-grow-1 me-2">
+        {{ field }}
+        {% if field.errors %}
+            <div class="text-danger small">{{ field.errors }}</div>
+        {% endif %}
+    </div>
+    <div class="btn-group btn-group-sm pe-2" role="group">
+        <input type="radio" class="btn-check" checked disabled autocomplete="off">
+        <label class="btn btn-outline-success tristate-btn-soft" title="Added to every valid item in this Source">+</label>
+    </div>
+</div>

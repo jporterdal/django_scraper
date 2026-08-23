@@ -90,16 +90,28 @@ The workspace SHALL offer one control per `Tag` in the system, each presenting e
 - **WHEN** a tag's control is set to "add" and applied against an item that already has that tag, or set to "remove" and applied against an item that never had that tag
 - **THEN** that item's tags are unaffected — no error, no duplicate, no-op
 
-### Requirement: Each per-row tri-state control shows how many selected items currently hold that value
-For every row offered by a tri-state control — a tag, a vendor-scoped expected value, a manual expected value, or a Source-scoped include/exclude search pattern — the workspace SHALL display how many items in the current working selection already have that value, worded "Active on N items in current selection," whenever N is at least 1. When N is 0, no such annotation SHALL be shown for that row.
+### Requirement: Each per-row tri-state control shows how many eligible selected items currently hold that value
+For every row offered by a tri-state control — a tag, a vendor-scoped expected value, a manual expected value, or a Source-scoped include/exclude search pattern — the workspace SHALL display how many items in the current working selection already have that value against how many selected items could possibly have it, worded "Active on X / Y items," whenever X is at least 1. When X is 0, no such annotation SHALL be shown for that row.
+
+The denominator Y is the row's own eligible scope, not always the whole selection: for a row scoped to a vendor or Source (a vendor-scoped expected-value row, or a Source-scoped search-pattern row), Y is the count of selected items configured for that vendor/Source — the same count already shown as that row's group heading. For a row with no such scoping (a tag row, or a "Manual entry" expected-value row), Y is the size of the whole working selection, since any selected item could hold that value.
+
+> **Note:** this requirement originally worded the annotation "Active on N items in current selection" with no denominator. `/opsx:apply` (2026-08-23) changed it to "Active on X / Y items" per user request, adding the eligible-scope denominator; the underlying counting logic for X (and its 0-count omission rule) is unchanged.
 
 #### Scenario: Tag annotation reflects the current selection, not every item in the system
 - **WHEN** a tag is applied to 6 items total in the system, 4 of which are in the current working selection of 10
-- **THEN** that tag's row shows "Active on 4 items in current selection"
+- **THEN** that tag's row shows "Active on 4 / 10 items"
 
-#### Scenario: Expected-value annotation reflects items holding that exact value, not merely items with the vendor configured
+#### Scenario: Expected-value annotation reflects items holding that exact value, scoped to the vendor's own item count
 - **WHEN** 8 of 20 selected items have vendor `wt` configured, but only 3 of those 8 currently have `{"value": "Gadgets", "source": "wt"}` stored
-- **THEN** the `wt`/`Gadgets` row's annotation reads "Active on 3 items in current selection", distinct from the `wt` group's own "8 of 20 selected items have this vendor configured" heading
+- **THEN** the `wt`/`Gadgets` row's annotation reads "Active on 3 / 8 items", distinct from the `wt` group's own "8 of 20 selected items have this vendor configured" heading
+
+#### Scenario: Manual-entry and tag rows use the whole selection as their denominator
+- **WHEN** a "Manual entry" expected-value row or a tag row is evaluated against a working selection of 10 items, with no vendor/Source scoping narrowing which items are eligible
+- **THEN** that row's denominator is 10, the full selection size
+
+#### Scenario: Search-pattern annotation is scoped to the Source's own item count
+- **WHEN** a Source-scoped Include/Exclude pattern row is evaluated against a working selection where 8 of 20 items have that Source's `ItemSource` configured, and 5 of those 8 currently have the pattern
+- **THEN** that row's annotation reads "Active on 5 / 8 items"
 
 #### Scenario: Annotation omitted when no selected item currently has the value
 - **WHEN** a tag or a vendor-scoped expected value is not currently present on any item in the working selection

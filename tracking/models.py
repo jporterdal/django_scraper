@@ -721,6 +721,82 @@ def expected_value_activity_for_items(item_ids, field_name):
     return counts
 
 
+def source_pattern_groups_for_items(item_ids):
+    """Source-grouped include/exclude search-pattern rows across a selection.
+
+    For every ``Source`` present via any of ``item_ids``'s ``ItemSource``s
+    (union, no minimum-shared-item threshold — same rule as
+    ``vendor_scoped_suggestions_for_items``), returns one group with that
+    Source's item-count within the selection and, separately for
+    ``title_include_patterns``/``title_exclude_patterns``, the distinct
+    patterns configured on any selected item's ``ItemSource`` for that
+    Source, each paired with how many selected items currently have that
+    exact pattern (design.md Decision 10). Unlike the ``expected_*``
+    vendor-scoped suggestions, there is no ``ObservedCategoryValue``-style
+    external taxonomy — every row here is sourced from the selection's own
+    ``ItemSource`` rows, so one query supplies both the candidate patterns
+    and their counts.
+
+    Batched to a bounded number of queries regardless of selection size: one
+    query fetching every selected ``ItemSource`` row's patterns (tallied in
+    Python — a ``JSONField`` list isn't portably SQL-aggregable across this
+    app's supported backends), one for the ``Source`` objects themselves —
+    not looped per item. Groups are sorted by ``Source.name`` (this section's
+    display label, chosen over ``key`` for readability — see design.md).
+    """
+    item_ids = list(item_ids)
+    if not item_ids:
+        return []
+
+    item_ids_by_source = defaultdict(set)
+    include_counts = defaultdict(Counter)
+    exclude_counts = defaultdict(Counter)
+    include_order = defaultdict(list)
+    exclude_order = defaultdict(list)
+
+    for item_id, source_id, include_patterns, exclude_patterns in ItemSource.objects.filter(
+        item_id__in=item_ids
+    ).values_list(
+        "item_id", "source_id", "title_include_patterns", "title_exclude_patterns"
+    ):
+        item_ids_by_source[source_id].add(item_id)
+        for pattern in include_patterns:
+            if pattern not in include_counts[source_id]:
+                include_order[source_id].append(pattern)
+            include_counts[source_id][pattern] += 1
+        for pattern in exclude_patterns:
+            if pattern not in exclude_counts[source_id]:
+                exclude_order[source_id].append(pattern)
+            exclude_counts[source_id][pattern] += 1
+
+    if not item_ids_by_source:
+        return []
+
+    sources_by_id = {
+        s.pk: s for s in Source.objects.filter(pk__in=item_ids_by_source.keys())
+    }
+
+    groups = []
+    for source_id, selected_item_ids in item_ids_by_source.items():
+        source = sources_by_id.get(source_id)
+        if source is None:
+            continue
+        groups.append({
+            "source": source,
+            "item_count": len(selected_item_ids),
+            "include_patterns": [
+                (pattern, include_counts[source_id][pattern])
+                for pattern in include_order[source_id]
+            ],
+            "exclude_patterns": [
+                (pattern, exclude_counts[source_id][pattern])
+                for pattern in exclude_order[source_id]
+            ],
+        })
+    groups.sort(key=lambda group: group["source"].name.lower())
+    return groups
+
+
 class UpdateSchedule(models.Model):
     """A recurring background scrape defined by a preset cadence.
 
