@@ -630,8 +630,12 @@ def fetch_one_unit(webupdate, item_source, fetcher=None, attempt=0, run_id=None,
         return UnitResult(deferred=False, fetch_job=fetch_job)
 
     if isinstance(parser, parsers.JSONSearchParser):
-        parser.expected_product_line = item.expected_product_line
-        parser.expected_category = item.expected_category
+        parser.expected_product_line = item.expected_values_for_source(
+            "product_line", source.key
+        )
+        parser.expected_category = item.expected_values_for_source(
+            "category", source.key
+        )
         parser.source = source
 
     headers = source.build_request_headers(search_term)
