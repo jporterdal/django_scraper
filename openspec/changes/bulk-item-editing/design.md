@@ -98,7 +98,7 @@ Since the roster panel already lists every selected item (text, active badge, ta
 
 `test_bulk_item_editing.py`'s `VendorScopedSuggestionTests` don't catch this: they assert against flat-string results (e.g. `assertEqual(item.expected_product_line, ["Gadgets"])`) and pass only because the test items involved start with empty `expected_*` lists, which masks the `dict.fromkeys` crash path and leaves the silent-corruption path unasserted.
 
-**Fix required (tracked as tasks 5.6 and 8.8):** rework `_resolve_suggestion_subsets`/`_apply_bulk_edit_to_item` to carry `(source_key, value)` through to apply time and merge into each item's existing list as `{"value","source"}` dicts, deduplicated by exact `(value, source)` pair — mirroring `_merge_checked_and_manual` in the single-item form, which already implements this correctly for the landed model. Update `VendorScopedSuggestionTests` accordingly.
+**Fixed (tasks 5.6 and 8.8, 2026-08-22):** `_resolve_suggestion_subsets`/`_apply_bulk_edit_to_item` now carry `(source_key, value)` through to apply time and merge into each item's existing list as `{"value","source"}` dicts via a new `_merge_expected_entries` helper, deduplicated by exact `(value, source)` pair — mirroring `_merge_checked_and_manual` in the single-item form. `VendorScopedSuggestionTests` were updated to seed and assert dict-shaped entries (matching real post-migration data), plus a new regression test covering an item that already carries a vendor-tagged entry before the apply round. Full `tracking` suite (488 tests) passes.
 
 ---
 

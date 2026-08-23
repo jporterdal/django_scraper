@@ -889,11 +889,16 @@ class BulkEditItemsForm(forms.Form):
 
 
 def _resolve_suggestion_subsets(item_ids, suggestions):
-    """Map item pk -> list of values to add, for vendor-scoped suggestions.
+    """Map item pk -> list of ``{"value", "source"}`` entries to add, for
+    vendor-scoped suggestions.
 
     ``suggestions`` is a list of ``(source_key, value)`` pairs. Batched to one
     query per distinct vendor among the checked suggestions — not one query
-    per item (see design.md's query-count requirement).
+    per item (see design.md's query-count requirement). Each resolved entry
+    keeps the vendor it was checked under as its ``source``, matching the
+    ``{"value", "source"}`` storage the expected-value-vendor-provenance
+    capability requires (design.md's "Known Follow-up", task 5.6) — a
+    checked suggestion is never merged in as a bare string.
     """
     result = defaultdict(list)
     if not suggestions:
@@ -908,7 +913,30 @@ def _resolve_suggestion_subsets(item_ids, suggestions):
             item_id__in=item_ids, source_id=source_key
         ).values_list("item_id", flat=True)
         for item_id in qualifying_item_ids:
-            result[item_id].extend(values)
+            result[item_id].extend(
+                {"value": value, "source": source_key} for value in values
+            )
+    return result
+
+
+def _merge_expected_entries(existing, additions):
+    """Merge new ``{"value", "source"}`` entries into an item's existing
+    ``expected_product_line``/``expected_category`` list.
+
+    Deduplicates by exact ``(value, source)`` pair equality, preserving
+    first-occurrence order — the same rule ``_merge_checked_and_manual``
+    applies for the single-item form, so a vendor-scoped suggestion applied
+    twice across bulk-edit rounds never produces a duplicate entry (design.md
+    task 5.6).
+    """
+    seen = set()
+    result = []
+    for entry in (*existing, *additions):
+        key = (entry["value"], entry["source"])
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append({"value": entry["value"], "source": entry["source"]})
     return result
 
 
@@ -931,13 +959,13 @@ def _apply_bulk_edit_to_item(
         item.active = active
         update_fields.append("active")
     if expected_product_line_add:
-        item.expected_product_line = list(
-            dict.fromkeys([*item.expected_product_line, *expected_product_line_add])
+        item.expected_product_line = _merge_expected_entries(
+            item.expected_product_line, expected_product_line_add
         )
         update_fields.append("expected_product_line")
     if expected_category_add:
-        item.expected_category = list(
-            dict.fromkeys([*item.expected_category, *expected_category_add])
+        item.expected_category = _merge_expected_entries(
+            item.expected_category, expected_category_add
         )
         update_fields.append("expected_category")
 

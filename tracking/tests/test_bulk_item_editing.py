@@ -333,16 +333,23 @@ class VendorScopedSuggestionTests(TestCase):
 
         for item in with_vendor:
             item.refresh_from_db()
-            self.assertEqual(item.expected_product_line, ["Gadgets"])
+            self.assertEqual(
+                item.expected_product_line, [{"value": "Gadgets", "source": "subset"}]
+            )
         for item in without_vendor:
             item.refresh_from_db()
             self.assertEqual(item.expected_product_line, [])
 
     def test_repeated_apply_is_additive_and_deduplicated(self):
+        """Task 5.6 — existing entries are stored as {"value","source"} dicts
+
+        (post-migration shape; see the expected-value-vendor-provenance
+        capability), and a suggestion applied twice does not duplicate.
+        """
         vendor = make_source(key="dedupe", parser_key="cc")
         item = make_item(text="DedupeItem")
         make_item_source(item, vendor)
-        item.expected_category = ["Manual Value"]
+        item.expected_category = [{"value": "Manual Value", "source": None}]
         item.save()
         ObservedCategoryValue.objects.create(
             source=vendor, field_name="category", value="Vendor Value", last_seen=timezone.now()
@@ -360,7 +367,51 @@ class VendorScopedSuggestionTests(TestCase):
             apply_bulk_edit([item.pk], form.cleaned_data)
 
         item.refresh_from_db()
-        self.assertEqual(item.expected_category, ["Manual Value", "Vendor Value"])
+        self.assertEqual(
+            item.expected_category,
+            [
+                {"value": "Manual Value", "source": None},
+                {"value": "Vendor Value", "source": "dedupe"},
+            ],
+        )
+
+    def test_applying_suggestion_preserves_existing_vendor_tagged_entries(self):
+        """Task 5.6/8.8 — an item already carrying a *vendor-tagged* entry
+
+        (not just a manual one) does not crash the apply round and keeps
+        that entry alongside the newly added suggestion. Regression test for
+        the pre-5.6 bug where merging a dict-shaped existing list via
+        ``dict.fromkeys`` raised ``TypeError: unhashable type: 'dict'``.
+        """
+        vendor = make_source(key="tagged", parser_key="cc")
+        other_vendor = make_source(key="other", parser_key="cc")
+        item = make_item(text="TaggedItem")
+        make_item_source(item, vendor)
+        item.expected_product_line = [{"value": "Existing", "source": "other"}]
+        item.save()
+        ObservedCategoryValue.objects.create(
+            source=vendor, field_name="product_line", value="New", last_seen=timezone.now()
+        )
+
+        form = BulkEditItemsForm(
+            data=_bulk_edit_post_data(
+                [item.pk],
+                expected_product_line_suggestions=['["tagged", "New"]'],
+            ),
+            item_ids=[item.pk],
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        results = apply_bulk_edit([item.pk], form.cleaned_data)
+
+        self.assertTrue(results[0]["success"], results[0]["error"])
+        item.refresh_from_db()
+        self.assertEqual(
+            item.expected_product_line,
+            [
+                {"value": "Existing", "source": "other"},
+                {"value": "New", "source": "tagged"},
+            ],
+        )
 
 
 class BestEffortApplyTests(TestCase):
