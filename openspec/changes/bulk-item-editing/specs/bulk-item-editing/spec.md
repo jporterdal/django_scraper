@@ -73,16 +73,37 @@ The workspace SHALL offer an `active` control with three states: leave unchanged
 - **WHEN** an operator leaves the bulk `active` control at its default and applies changes to other fields
 - **THEN** no item's `active` value is modified
 
-### Requirement: Tags are bulk-editable as independent add and remove sets, never a full replace
-The workspace SHALL offer two independent tag selections — tags to add and tags to remove — applied respectively as additions to and removals from each affected item's existing `tags`. The workspace SHALL NOT offer a mechanism that replaces an item's entire tag set from one shared value.
+### Requirement: Tags are bulk-editable via one add/remove/unchanged control per tag, never a full replace
+The workspace SHALL offer one control per `Tag` in the system, each presenting exactly three mutually exclusive states — add, remove, leave unchanged — defaulting to leave unchanged, so at most one of add/remove is ever active for a given tag at once. On apply, a tag set to add SHALL be added to every item in the working selection; a tag set to remove SHALL be removed from every item in the working selection; a tag left unchanged SHALL NOT be modified on any item. The workspace SHALL NOT offer a mechanism that replaces an item's entire tag set from one shared value.
+
+> **Note:** this requirement originally specified two independent multi-select fields (tags to add, tags to remove). `/opsx:explore` (2026-08-23, design.md Decision 9) replaced that mechanism with one tri-state control per tag — the underlying add/remove/never-a-full-replace semantics are unchanged, only the control's shape is.
 
 #### Scenario: Adding a tag preserves existing unrelated tags
-- **WHEN** an item in the working selection already carries a tag not related to the bulk edit, and the operator adds a different tag via the bulk "tags to add" selection
+- **WHEN** an item in the working selection already carries a tag not related to the bulk edit, and the operator sets a different tag's control to "add"
 - **THEN** the item ends up with both its pre-existing tag and the newly added tag
 
 #### Scenario: Removing a tag only removes the specified tag
-- **WHEN** an item in the working selection carries two tags, and the operator selects one of them in "tags to remove"
+- **WHEN** an item in the working selection carries two tags, and the operator sets one of them to "remove"
 - **THEN** only the specified tag is removed from that item; the other tag remains
+
+#### Scenario: Add and remove are idempotent
+- **WHEN** a tag's control is set to "add" and applied against an item that already has that tag, or set to "remove" and applied against an item that never had that tag
+- **THEN** that item's tags are unaffected — no error, no duplicate, no-op
+
+### Requirement: Each per-row tri-state control shows how many selected items currently hold that value
+For every row offered by a tri-state control — a tag, a vendor-scoped expected value, or a manual expected value — the workspace SHALL display how many items in the current working selection already have that value, worded "Active on N items in current selection," whenever N is at least 1. When N is 0, no such annotation SHALL be shown for that row.
+
+#### Scenario: Tag annotation reflects the current selection, not every item in the system
+- **WHEN** a tag is applied to 6 items total in the system, 4 of which are in the current working selection of 10
+- **THEN** that tag's row shows "Active on 4 items in current selection"
+
+#### Scenario: Expected-value annotation reflects items holding that exact value, not merely items with the vendor configured
+- **WHEN** 8 of 20 selected items have vendor `wt` configured, but only 3 of those 8 currently have `{"value": "Gadgets", "source": "wt"}` stored
+- **THEN** the `wt`/`Gadgets` row's annotation reads "Active on 3 items in current selection", distinct from the `wt` group's own "8 of 20 selected items have this vendor configured" heading
+
+#### Scenario: Annotation omitted when no selected item currently has the value
+- **WHEN** a tag or a vendor-scoped expected value is not currently present on any item in the working selection
+- **THEN** that row shows no "Active on..." annotation
 
 ### Requirement: The metadata provider is bulk-editable and routes through the existing refresh entrypoint
 The workspace SHALL offer a `metadata_provider_key` control with three states: leave unchanged, set to a specific registry key, or clear. For every item whose `metadata_provider_key` actually changes as a result of an apply round, the change SHALL be applied through the same shared refresh entrypoint used by individual item creation, bulk item creation, and individual item editing (see the `item-metadata-enrichment` capability's single-entrypoint requirement), so that the existing provider-change reset behavior applies uniformly.
@@ -99,8 +120,10 @@ The workspace SHALL offer a `metadata_provider_key` control with three states: l
 - **WHEN** an operator leaves the bulk `metadata_provider_key` control at its default
 - **THEN** no item's `metadata_provider_key` or `ItemMetadata` is modified, and no refresh is requested
 
-### Requirement: Expected product-line and category suggestions are grouped by vendor across the selection
-For the working selection, the workspace SHALL compute the set of vendors present via any selected item's configured `ItemSource`s, with no minimum-shared-item threshold — a vendor present on even one selected item SHALL get its own suggestion group. Each vendor's group SHALL be labeled with how many of the working selection's items have that vendor configured, and SHALL offer suggestion checkboxes sourced from `ObservedCategoryValue` (the `item-category-relevance` capability's data source) scoped to that vendor, separately for `expected_product_line` and `expected_category`.
+### Requirement: Expected product-line and category rows are grouped by vendor, plus a manual-entry group, across the selection
+For the working selection, the workspace SHALL compute the set of vendors present via any selected item's configured `ItemSource`s, with no minimum-shared-item threshold — a vendor present on even one selected item SHALL get its own group. Each vendor's group SHALL be labeled with how many of the working selection's items have that vendor configured, and SHALL offer one row per value sourced from `ObservedCategoryValue` (the `item-category-relevance` capability's data source) scoped to that vendor, separately for `expected_product_line` and `expected_category`. In addition, the workspace SHALL offer a "Manual entry" group — one row per distinct value stored with `source: null` on at least one item in the working selection, sourced from the selected items' own stored `expected_product_line`/`expected_category`, not from `ObservedCategoryValue`.
+
+> **Note:** the "Manual entry" group is new as of `/opsx:explore` (2026-08-23, design.md Decision 9); the vendor-grouping behavior below is unchanged from this capability's original implementation.
 
 #### Scenario: A vendor used by one item still gets a group
 - **WHEN** the working selection has 20 items and exactly 1 of them has `ItemSource` configured against vendor `coolstuff`
@@ -110,22 +133,44 @@ For the working selection, the workspace SHALL compute the set of vendors presen
 - **WHEN** vendor `wt` has `ObservedCategoryValue` rows for `field_name="product_line"` with values `"Magic"` and `"Pokemon"`
 - **THEN** the `wt` group's `expected_product_line` suggestions include both values, regardless of which specific selected items' own prior fetches produced them
 
-### Requirement: Applying an expected product-line or category suggestion affects only the matching vendor subset
-When an operator checks a vendor-scoped `expected_product_line` or `expected_category` suggestion and applies, the value SHALL be added only to the items in the working selection that have that suggestion's vendor configured via `ItemSource`; other items in the selection SHALL be unaffected by that checkbox. The value SHALL be merged into each affected item's existing list, stored as a `{"value", "source"}` entry with `source` set to the checked suggestion's vendor key (per the `expected-value-vendor-provenance` capability's storage model), and deduplicated by exact `(value, source)` pair equality — never replacing the item's existing list.
+#### Scenario: A manual value present on any selected item gets its own Manual entry row
+- **WHEN** at least one item in the working selection has `{"value": "Foil", "source": null}` in its `expected_category`
+- **THEN** a "Manual entry" group row for `"Foil"` is shown for `expected_category`
 
-> **Note:** this requirement originally specified deduplication by exact string equality, matching the flat `list[str]` storage model in place when this capability was implemented. `expected-value-vendor-provenance` (merged from `dev`, archived 2026-08-22) changed `SearchableItem.expected_product_line`/`expected_category` to `list[{"value","source"}]` storage; the requirement text above has been updated to match, and the implementation was reworked to match it in `tasks.md` task 5.6.
+#### Scenario: A manual value absent from every selected item is not offered
+- **WHEN** no item in the working selection has any `source: null` entry with the value `"Reprint"` in `expected_category`
+- **THEN** no "Manual entry" row for `"Reprint"` is shown, even if some other, non-selected item in the system has it
 
-#### Scenario: Suggestion applies only to items with the matching vendor
-- **WHEN** the working selection has 20 items, 8 of which have vendor `wt` configured, and the operator checks a `wt`-scoped `expected_product_line` suggestion and applies
-- **THEN** exactly those 8 items have the value added to `expected_product_line`; the other 12 items are unmodified by this checkbox
+### Requirement: Expected product-line/category rows apply as add/remove via a tri-state control
+Each row offered under a vendor group or the "Manual entry" group SHALL present the same three mutually exclusive states as tag rows — add, remove, leave unchanged — defaulting to leave unchanged.
 
-#### Scenario: Applying a suggestion preserves an item's existing expected values
-- **WHEN** an item already has `expected_product_line` containing a manually-entered value unrelated to any vendor suggestion, and a vendor-scoped suggestion is applied to that item
-- **THEN** the item's `expected_product_line` contains both the pre-existing manual value and the newly added suggestion value
+On apply: a vendor-scoped row set to add SHALL have its value added, as a `{"value", "source"}` entry with `source` set to that row's vendor key, only to items in the working selection that have that vendor's `ItemSource` configured; a manual row set to add SHALL have its value added, as a `{"value", "source": null}` entry, to every item in the working selection. A vendor-scoped row set to remove SHALL have that exact `(value, source)` pair removed from every item in the working selection that currently has it and has that vendor's `ItemSource` configured; a manual row set to remove SHALL have its `{"value", "source": null}` entry removed from every item in the working selection that currently has it. A row left unchanged SHALL NOT modify that value on any item. In every case the value SHALL be merged into or removed from each affected item's existing list — an item's other `expected_product_line`/`expected_category` entries SHALL never be replaced or discarded as a side effect.
 
-#### Scenario: Checking the same suggestion twice across rounds does not duplicate it
-- **WHEN** an item already has a given value in `expected_category` from an earlier apply round, and the same vendor-scoped suggestion is checked and applied again in a later round
+> **Note:** this requirement originally specified an additive-only checkbox with deduplication by exact string equality (pre-`expected-value-vendor-provenance`), then deduplication by exact `(value, source)` pair equality with add as the only action (post-`expected-value-vendor-provenance`, `tasks.md` task 5.6). `/opsx:explore` (2026-08-23, design.md Decision 9) adds the remove action and the manual-entry case, now that `(value, source)`-pair storage makes both well-defined.
+
+#### Scenario: Add applies only to items with the matching vendor
+- **WHEN** the working selection has 20 items, 8 of which have vendor `wt` configured, and the operator sets a `wt`-scoped `expected_product_line` row to "add" and applies
+- **THEN** exactly those 8 items have the value added to `expected_product_line`; the other 12 items are unmodified by this row
+
+#### Scenario: Remove strips only the exact (value, source) pair from items that currently have it
+- **WHEN** the working selection has 20 items, 8 of which have vendor `wt` configured and currently store `{"value": "Gadgets", "source": "wt"}`, and the operator sets that row to "remove" and applies
+- **THEN** those 8 items no longer have that entry in `expected_product_line`; every other entry on those items, and every other item in the selection, is unaffected
+
+#### Scenario: Manual-entry add/remove affects every item in the selection, regardless of vendor configuration
+- **WHEN** the operator sets a "Manual entry" row to "add" and applies, across a selection where the selected items have varying (or no) `ItemSource` configuration
+- **THEN** every item in the working selection has that value added as a `{"value", "source": null}` entry, unaffected by which vendors, if any, each item has configured
+
+#### Scenario: Applying a row preserves an item's existing expected values
+- **WHEN** an item already has `expected_product_line` containing a manually-entered value unrelated to the row being applied, and a vendor-scoped row is set to "add" and applied to that item
+- **THEN** the item's `expected_product_line` contains both the pre-existing manual value and the newly added value
+
+#### Scenario: Re-applying the same add across rounds does not duplicate it
+- **WHEN** an item already has a given value in `expected_category` from an earlier apply round, and the same row is set to "add" and applied again in a later round
 - **THEN** the item's `expected_category` still contains that value exactly once
+
+#### Scenario: Add and remove are idempotent
+- **WHEN** a row is set to "add" and applied against an item that already has that exact `(value, source)` entry, or set to "remove" and applied against an item that never had it
+- **THEN** that item's `expected_product_line`/`expected_category` is unaffected — no error, no duplicate, no-op
 
 ### Requirement: Bulk apply attempts every selected item independently
 For a given apply round, the workspace SHALL attempt to apply the round's field changes to every item in the working selection, even if applying to one item fails. A failure on one item SHALL NOT prevent the remaining items in the same round from being attempted. Each item's outcome SHALL be reported individually.
