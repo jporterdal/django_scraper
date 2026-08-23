@@ -21,7 +21,7 @@
 
 ## 4. Vendor-scoped expected_product_line / expected_category suggestions
 
-> **Follow-up flagged post-implementation** (see design.md's "Known Follow-up"): this section, and apply task 5.5, are complete and correct against the current flat-`list[str]` `expected_product_line`/`expected_category` storage model, but are expected to need rework once a forthcoming (not yet proposed) change moves that storage to `(value, source)` pairs. Not a blocker for this change's archival.
+> **Follow-up landed** (see design.md's "Known Follow-up", UPDATE 2026-08-22): the anticipated storage-model change — `expected-value-vendor-provenance` — has merged from `dev` and archived, moving `expected_product_line`/`expected_category` to `(value, source)`-pair storage. Tasks 4.1–4.4 below (building vendor-scoped suggestion choices) remain correct: `ObservedCategoryValue.value` stays a raw string regardless of the storage-model change, and the choice encoding already carries `(vendor, value)`. Apply task 5.5's *consumption* of those choices does not — see new task 5.6.
 
 - [x] 4.1 Implement a vendor-scoped suggestion helper (sibling to `observed_values_for_item`) that, given a set of item ids, returns each vendor (`Source`) present via any of those items' `ItemSource`s, annotated with how many of the given items have that vendor configured
 - [x] 4.2 For each such vendor, build suggestion choices from `ObservedCategoryValue` scoped to that vendor, separately for `field_name="product_line"` and `field_name="category"`, with each choice value carrying enough information (vendor + raw value) to resolve the correct item subset at apply time
@@ -34,7 +34,8 @@
 - [x] 5.2 Implement `active` bulk apply: set `True`/`False` on every item in the working selection when set away from leave-unchanged
 - [x] 5.3 Implement tag add/remove bulk apply: add `tags_add` members to and remove `tags_remove` members from each item's existing `tags`, independently
 - [x] 5.4 Implement `metadata_provider_key` bulk apply: for each item whose value actually changes, call the existing shared refresh entrypoint (`request_metadata_refresh` / `sync_metadata_after_save`, per `item-metadata-enrichment`) exactly as `SearchableItemForm.save()` does today, so the provider-change reset behavior is reused
-- [x] 5.5 Implement `expected_product_line`/`expected_category` bulk apply: for each checked vendor-scoped suggestion, add its value (merged/deduped by exact string equality) only to items in the working selection that have that suggestion's vendor configured via `ItemSource`
+- [x] 5.5 Implement `expected_product_line`/`expected_category` bulk apply: for each checked vendor-scoped suggestion, add its value (merged/deduped by exact string equality) only to items in the working selection that have that suggestion's vendor configured via `ItemSource` — implemented and correct against the flat-`list[str]` model in place at the time; superseded by 5.6 now that the storage model has changed
+- [ ] 5.6 Rework `_resolve_suggestion_subsets`/`_apply_bulk_edit_to_item` (`tracking/forms.py`) for the landed `{"value","source"}`-pair storage model: carry `(source_key, value)` through to apply time instead of discarding the vendor, and merge into each item's existing list as `{"value","source"}` dicts deduplicated by exact `(value, source)` pair — mirroring `_merge_checked_and_manual` in the single-item form. Fixes two confirmed failure modes: `TypeError: unhashable type: 'dict'` when a selected item already has stored entries (current code mixes dicts and strings in `dict.fromkeys`), and silent corruption to a plain-string list when it doesn't, which then breaks the next scrape for that item at `tracking/scrape.py:633` (`item.expected_values_for_source` does `entry["source"]` on each entry)
 
 ## 6. Best-effort per-item apply and error reporting
 
@@ -56,6 +57,7 @@
 - [x] 8.5 Vendor-scoped suggestion tests: a vendor present on only one selected item still gets its own group with an accurate count; applying a vendor-scoped suggestion affects only the matching subset of the selection; existing per-item `expected_*` values are preserved (additive, deduplicated) across repeated applies
 - [x] 8.6 Best-effort apply tests: a failure on one item in an apply round does not prevent the round from applying to the remaining items; failures are reported per item
 - [x] 8.7 Query-count test for the vendor-scoped suggestion computation across a multi-item selection (bounded, not linear in selection size)
+- [ ] 8.8 Update `VendorScopedSuggestionTests` (and any other `expected_product_line`/`expected_category` assertions in `test_bulk_item_editing.py`) to assert against `{"value","source"}` dict entries instead of flat strings, and add a case covering an item that already has stored entries before the apply round — current assertions (e.g. `assertEqual(item.expected_product_line, ["Gadgets"])`) pass only because the test items involved start with empty `expected_*` lists, which masks the bug fixed in 5.6
 
 ## 9. Docs
 
