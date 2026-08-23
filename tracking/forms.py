@@ -83,27 +83,31 @@ EXCLUDE_HELP_TEXT = (
 )
 
 EXPECTED_PRODUCT_LINE_HELP_TEXT = (
-    "Check any suggestions that apply, e.g. 'Magic', 'Pokemon'. A result "
-    "matching at least one checked or entered value counts as a match, "
-    "disambiguating this item from a same-titled item in an unrelated "
-    "product line. Leave everything unchecked/empty to skip this check."
+    "One row per distinct value, labeled by vendor or 'Manual entry'. Check "
+    "any that apply; uncheck to remove. A checked vendor row disambiguates "
+    "only that vendor's results; a 'Manual entry' row applies to every "
+    "vendor configured for this item. Leave everything unchecked/empty to "
+    "skip this check."
 )
 
 EXPECTED_PRODUCT_LINE_MANUAL_HELP_TEXT = (
-    "One value per line, for anything not covered by a suggestion above "
-    "(e.g. a different vendor's own wording for the same product line)."
+    "One new value per line, for anything not covered by a row above (e.g. "
+    "a different vendor's own wording for the same product line). Added as "
+    "'Manual entry' rows, applying to every vendor configured for this item."
 )
 
 EXPECTED_CATEGORY_HELP_TEXT = (
-    "Check any suggestions that apply, e.g. a specific set name. A result "
-    "matching at least one checked or entered value counts as a match, "
-    "narrowing results beyond product-line disambiguation. Independent of "
-    "expected product line. Leave everything unchecked/empty to skip this "
-    "check."
+    "One row per distinct value, labeled by vendor or 'Manual entry'. Check "
+    "any that apply; uncheck to remove. A checked vendor row narrows only "
+    "that vendor's results; a 'Manual entry' row applies to every vendor "
+    "configured for this item. Independent of expected product line. Leave "
+    "everything unchecked/empty to skip this check."
 )
 
 EXPECTED_CATEGORY_MANUAL_HELP_TEXT = (
-    "One value per line, for anything not covered by a suggestion above."
+    "One new value per line, for anything not covered by a row above. "
+    "Added as 'Manual entry' rows, applying to every vendor configured for "
+    "this item."
 )
 
 PINNED_URL_HELP_TEXT = (
@@ -156,61 +160,103 @@ def _apply_bootstrap_form_classes(form):
         widget.attrs["class"] = (existing + " " + css).strip()
 
 
-def _suggestion_choices(instance, field_name):
-    """One (value, "value (source_key)") choice per observed (source, value) pair.
+def _suggestion_choice_value(source_key, value):
+    """Encode a suggestion/stored-entry checkbox as a single form value.
 
-    Not deduplicated across sources — a value shared by two vendors renders as
-    two distinct choices so the checkbox UI can show, and independently
-    pre-check, which vendor(s) a stored value came from. Grouped by vendor,
-    alphabetically within each group.
+    A checkbox's identity is the exact ``(source, value)`` pair it represents
+    (``source=None`` for a manually-entered value), not the bare value alone —
+    see expected-value-vendor-provenance design.md Decision 3. Reuses the
+    ``json.dumps([source_key, value])`` encoding bulk-item-editing's own
+    vendor-scoped suggestion checkboxes already established, rather than
+    inventing a second scheme.
     """
-    if instance is None or not instance.pk:
-        return []
-    pairs = observed_values_for_item(instance, field_name)
-    ordered = sorted(pairs, key=lambda pair: (pair[0].lower(), pair[1].lower()))
+    return json.dumps([source_key, value])
+
+
+def _parse_suggestion_choice_value(raw):
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(parsed, list) or len(parsed) != 2:
+        return None
+    return parsed[0], parsed[1]
+
+
+def _suggestion_choices(instance, field_name):
+    """One checkbox choice per (source, value) pair to display for ``field_name``.
+
+    Includes every vendor-observed pair scoped to the item's configured
+    sources, plus any pair already stored on the instance that isn't among
+    those observations — a vendor-tagged entry whose vendor no longer
+    reports that value, or a manually-entered (``source: None``) entry —
+    so no stored entry is ever silently dropped from the form (design.md
+    Decision 4). Not deduplicated across vendors: a value shared by two
+    vendors still renders as two distinct, independently checkable rows.
+    Grouped by vendor key, alphabetically within each group; manual
+    ("Manual entry") rows sort last.
+    """
+    pairs = set()
+    if instance is not None and instance.pk:
+        pairs.update(observed_values_for_item(instance, field_name))
+        pairs.update(
+            (entry["source"], entry["value"])
+            for entry in getattr(instance, f"expected_{field_name}")
+        )
+
+    def sort_key(pair):
+        source_key, value = pair
+        return (source_key is None, (source_key or "").lower(), value.lower())
+
+    ordered = sorted(pairs, key=sort_key)
     return [
-        (value, f"{value} ({source_key})")
+        (
+            _suggestion_choice_value(source_key, value),
+            f"{value} (Manual entry)" if source_key is None else f"{value} ({source_key})",
+        )
         for source_key, value in ordered
     ]
 
 
-def _merge_and_dedupe(checked_values, manual_text):
-    """Combine checked suggestion values with manual textarea lines.
+def _merge_checked_and_manual(checked_choice_values, manual_text):
+    """Combine checked (source, value) checkboxes with newly added manual lines.
 
-    Deduplicates by exact string equality, preserving first-occurrence order —
-    storage-level dedup only; the suggestion *choices* stay undeduplicated
-    across vendors (see ``_suggestion_choices``).
+    Every checked box already carries its own exact vendor (or ``None`` for
+    a "Manual entry" row); every manual textarea line becomes a new
+    ``source: None`` entry. Deduplicates by exact ``(value, source)`` pair
+    equality, preserving first-occurrence order — not by value alone (design.md
+    Decision 5).
     """
-    combined = [*(checked_values or []), *_lines_to_list(manual_text)]
-    return list(dict.fromkeys(combined))
+    pairs = []
+    for raw in checked_choice_values or []:
+        parsed = _parse_suggestion_choice_value(raw)
+        if parsed is not None:
+            pairs.append(tuple(parsed))
+    pairs.extend((None, value) for value in _lines_to_list(manual_text))
 
-
-def _split_stored_values(stored_values, choices):
-    """Split a stored list into (values matching a current choice, values that don't).
-
-    Used on form load to pre-check every suggestion checkbox whose value is
-    already stored (across all vendors sharing that value) and to surface any
-    stored value with no matching current suggestion in the manual textarea,
-    rather than silently dropping it from the form.
-    """
-    choice_values = {value for value, _ in choices}
-    stored_values = stored_values or []
-    matched = [v for v in stored_values if v in choice_values]
-    unmatched = [v for v in stored_values if v not in choice_values]
-    return matched, unmatched
+    seen = set()
+    result = []
+    for source_key, value in pairs:
+        key = (source_key, value)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append({"value": value, "source": source_key})
+    return result
 
 
 class SearchableItemForm(forms.ModelForm):
     """Form for editing a SearchableItem (search term, priority, active, tags).
 
     ``expected_product_line``/``expected_category`` are list-valued model
-    fields, each backed here by two form fields: a vendor-labeled checkbox
-    group of suggestions (sourced from ``ObservedCategoryValue`` for the
-    item's own configured sources, one checkbox per (source, value) pair —
-    not deduplicated across vendors, so a value two vendors share still shows
-    which vendor(s) it came from) and a manual free-text textarea for values
-    not in the suggestion list. Neither model field is bound directly; both
-    are assembled from the two form fields in ``save()``.
+    fields (each entry a ``{"value", "source"}`` pair), each backed here by
+    two form fields: a checkbox group with one row per distinct ``(source,
+    value)`` pair — vendor-labeled suggestions from ``ObservedCategoryValue``
+    plus every already-stored pair, so a stale vendor entry or an existing
+    "Manual entry" row is never silently dropped — and a manual free-text
+    textarea used only to add brand-new values (always stored with
+    ``source: None``). Neither model field is bound directly; both are
+    assembled from the two form fields in ``save()``.
     """
 
     expected_product_line_suggestions = forms.MultipleChoiceField(
@@ -222,7 +268,7 @@ class SearchableItemForm(forms.ModelForm):
     expected_product_line_manual = forms.CharField(
         required=False,
         widget=forms.Textarea(attrs={"rows": 2}),
-        label="Other expected product line value(s)",
+        label="Add expected product line value(s)",
         help_text=EXPECTED_PRODUCT_LINE_MANUAL_HELP_TEXT,
     )
     expected_category_suggestions = forms.MultipleChoiceField(
@@ -234,7 +280,7 @@ class SearchableItemForm(forms.ModelForm):
     expected_category_manual = forms.CharField(
         required=False,
         widget=forms.Textarea(attrs={"rows": 2}),
-        label="Other expected category value(s)",
+        label="Add expected category value(s)",
         help_text=EXPECTED_CATEGORY_MANUAL_HELP_TEXT,
     )
     metadata_provider_key = forms.ChoiceField(
@@ -257,30 +303,30 @@ class SearchableItemForm(forms.ModelForm):
         ]
 
         instance = getattr(self, "instance", None)
-        product_line_choices = _suggestion_choices(instance, "product_line")
-        category_choices = _suggestion_choices(instance, "category")
-        self.fields["expected_product_line_suggestions"].choices = product_line_choices
-        self.fields["expected_category_suggestions"].choices = category_choices
+        self.fields["expected_product_line_suggestions"].choices = _suggestion_choices(
+            instance, "product_line"
+        )
+        self.fields["expected_category_suggestions"].choices = _suggestion_choices(
+            instance, "category"
+        )
 
         if instance is not None and instance.pk:
-            pl_matched, pl_unmatched = _split_stored_values(
-                instance.expected_product_line, product_line_choices
-            )
-            cat_matched, cat_unmatched = _split_stored_values(
-                instance.expected_category, category_choices
-            )
-            self.initial["expected_product_line_suggestions"] = pl_matched
-            self.initial["expected_product_line_manual"] = _list_to_lines(pl_unmatched)
-            self.initial["expected_category_suggestions"] = cat_matched
-            self.initial["expected_category_manual"] = _list_to_lines(cat_unmatched)
+            self.initial["expected_product_line_suggestions"] = [
+                _suggestion_choice_value(entry["source"], entry["value"])
+                for entry in instance.expected_product_line
+            ]
+            self.initial["expected_category_suggestions"] = [
+                _suggestion_choice_value(entry["source"], entry["value"])
+                for entry in instance.expected_category
+            ]
 
     def save(self, commit=True):
         instance = super().save(commit=False)
-        instance.expected_product_line = _merge_and_dedupe(
+        instance.expected_product_line = _merge_checked_and_manual(
             self.cleaned_data.get("expected_product_line_suggestions"),
             self.cleaned_data.get("expected_product_line_manual"),
         )
-        instance.expected_category = _merge_and_dedupe(
+        instance.expected_category = _merge_checked_and_manual(
             self.cleaned_data.get("expected_category_suggestions"),
             self.cleaned_data.get("expected_category_manual"),
         )

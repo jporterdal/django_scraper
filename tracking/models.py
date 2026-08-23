@@ -188,10 +188,14 @@ class SearchableItem(models.Model):
         default=list,
         blank=True,
         verbose_name=(
-            "Expected product line(s) (e.g. ['Magic'], or ['Magic', 'MTG'] when "
-            "vendors word it differently) — a result must contain at least one "
-            "listed value to disambiguate this item from a same-titled item in "
-            "an unrelated product line. Empty list disables this check."
+            "Expected product line(s), each a {'value': str, 'source': str|None} "
+            "entry (e.g. {'value': 'Magic', 'source': None}, or one entry per "
+            "vendor when vendors word it differently) — a result from vendor V "
+            "must contain at least one of V's applicable values (V's own tagged "
+            "entries plus every source=None/manual entry) to disambiguate this "
+            "item from a same-titled item in an unrelated product line. A vendor "
+            "with no applicable entries has this check disabled for its own "
+            "rows. See expected-value-vendor-provenance design.md."
         ),
     )
 
@@ -199,13 +203,31 @@ class SearchableItem(models.Model):
         default=list,
         blank=True,
         verbose_name=(
-            "Expected category/set value(s) (e.g. a specific MTG set, possibly "
-            "spelled differently per vendor) — a result must contain at least "
-            "one listed value to narrow results beyond product-line "
-            "disambiguation. Independent of expected product line; empty list "
-            "disables this check."
+            "Expected category/set value(s), each a {'value': str, 'source': "
+            "str|None} entry (e.g. a specific MTG set, possibly spelled "
+            "differently per vendor) — a result from vendor V must contain at "
+            "least one of V's applicable values (V's own tagged entries plus "
+            "every source=None/manual entry) to narrow results beyond "
+            "product-line disambiguation. Independent of expected product "
+            "line. A vendor with no applicable entries has this check disabled "
+            "for its own rows. See expected-value-vendor-provenance design.md."
         ),
     )
+
+    def expected_values_for_source(self, field_name, source_key):
+        """Applicable ``expected_<field_name>`` values for one vendor's rows.
+
+        Returns that vendor's own tagged entries' values plus every
+        ``source: null`` (manual) entry's value — the per-vendor pruning
+        used at the scrape handoff (see design.md Decision 2). ``field_name``
+        is ``"product_line"`` or ``"category"``.
+        """
+        entries = getattr(self, f"expected_{field_name}")
+        return [
+            entry["value"]
+            for entry in entries
+            if entry["source"] == source_key or entry["source"] is None
+        ]
 
     metadata_provider_key = models.CharField(
         max_length=20,
