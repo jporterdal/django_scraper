@@ -591,7 +591,7 @@ class SearchableListView(ListView):
             item=OuterRef("item_id"),
             source=OuterRef("source_id"),
             instock=1,
-        ).order_by("-update__timestamp")
+        ).order_by("-update__timestamp", "price", "title")
         cheapest_item_source = (
             ItemSource.objects.filter(item=OuterRef("pk"))
             .annotate(

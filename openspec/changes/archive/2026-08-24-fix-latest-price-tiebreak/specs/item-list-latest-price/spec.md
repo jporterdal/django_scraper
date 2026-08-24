@@ -1,9 +1,4 @@
-# item-list-latest-price
-
-## Purpose
-TBD - defines how the "Latest price" (and its associated title/source annotations) shown for a `SearchableItem` on the `view_terms` list is computed from linked sources' `SearchResult` history.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Latest price is the minimum of each source's own latest known price
 For each `SearchableItem` shown on the `view_terms` list, the system SHALL compute the displayed "Latest price" as the minimum, across the item's linked sources, of each source's own most recent in-stock `SearchResult` price. The comparison SHALL NOT be restricted to results that share the same `WebUpdate` — a source's most recent in-stock price remains its current price even when other sources belonging to the same item are checked or updated more recently. When a source's own most recent `WebUpdate` stored more than one in-stock `SearchResult` for the item (tied on timestamp), the source's "latest known price" SHALL deterministically resolve to the cheapest of those tied results, not an arbitrary one. If multiple tied results additionally share the same price, the result SHALL deterministically resolve to the alphabetically-first title among them, not an arbitrary one.
@@ -27,10 +22,3 @@ For each `SearchableItem` shown on the `view_terms` list, the system SHALL compu
 #### Scenario: Tied results also tie on price
 - **WHEN** a source's single most recent `WebUpdate` stores multiple in-stock `SearchResult` rows for the same item at the same price
 - **THEN** that source's contribution to the cross-source minimum is attributed to the alphabetically-first title among those rows, regardless of the order the rows were stored in
-
-### Requirement: Latest price, title, and source annotations describe the same result
-The `latest_known_minprice`, `latest_known_minprice_title`, and `latest_known_minprice_source` values displayed together SHALL always originate from the same winning `(item, source)` result — never independently resolved values that could describe different sources or different points in time.
-
-#### Scenario: Title and source match the winning price
-- **WHEN** the Latest price for an item resolves to a given source's most recent in-stock result
-- **THEN** the displayed title and source key are that same result's title and source key, not another source's

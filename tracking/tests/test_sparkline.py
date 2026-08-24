@@ -126,6 +126,45 @@ class SparklineSourceScopedTests(AuthedClientTestCase):
         self.assertEqual(annotated.latest_known_minprice, 5.25)
         self.assertEqual(annotated.latest_known_minprice_source, self.src_b.key)
 
+    def test_latest_price_picks_cheapest_of_same_source_tied_rows(self):
+        """A source's single latest WebUpdate can store multiple in-stock
+        variant rows (e.g. regular/foil printings) tied on timestamp; the
+        cheapest of those tied rows must win, not an arbitrary one.
+
+        Rows are inserted most-expensive-first to prove the fix doesn't
+        accidentally rely on insertion order.
+        """
+        update = self._stamp(make_web_update(), timezone.now())
+        make_search_result(
+            self.item, self.src_a, update, title="A foil", price=1.75
+        )
+        make_search_result(
+            self.item, self.src_a, update, title="A regular", price=1.25
+        )
+
+        context = self._list_context()
+        annotated = self._annotated_item(context["object_list"])
+        self.assertEqual(annotated.latest_known_minprice, 1.25)
+        self.assertEqual(annotated.latest_known_minprice_title, "A regular")
+        self.assertEqual(annotated.latest_known_minprice_source, self.src_a.key)
+
+    def test_latest_price_tied_on_price_picks_alphabetical_title(self):
+        """When same-source tied rows also tie on price, the alphabetically
+        first title wins deterministically, regardless of insertion order.
+        """
+        update = self._stamp(make_web_update(), timezone.now())
+        make_search_result(
+            self.item, self.src_a, update, title="Zeta variant", price=3.00
+        )
+        make_search_result(
+            self.item, self.src_a, update, title="Alpha variant", price=3.00
+        )
+
+        context = self._list_context()
+        annotated = self._annotated_item(context["object_list"])
+        self.assertEqual(annotated.latest_known_minprice, 3.00)
+        self.assertEqual(annotated.latest_known_minprice_title, "Alpha variant")
+
     def test_price_history_carry_forward_on_unchanged_dedup(self):
         base = timezone.now() - timedelta(days=3)
         stored_update = self._stamp(make_web_update(), base)
