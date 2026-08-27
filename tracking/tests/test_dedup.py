@@ -102,7 +102,7 @@ class ItemListDedupUITests(AuthedClientTestCase):
         cls.source, cls.item, cls.item_source = make_linked_item(item_text="carry widget")
         cls.never_item = make_item(text="never fetched", active=True)
 
-    def _seed_stored_price(self, price=49.99, title="Widget A"):
+    def _seed_stored_price(self, price=49.99, title="carry widget A"):
         update = WebUpdate.objects.create(status=WebUpdate.Status.DONE)
         SearchResult.objects.create(
             title=title,
@@ -141,7 +141,7 @@ class ItemListDedupUITests(AuthedClientTestCase):
         response = self.client.get(reverse("view_terms"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "$49.99")
-        self.assertContains(response, "Widget A")
+        self.assertContains(response, "carry widget A")
         self.assertContains(response, "Unchanged")
         self.assertContains(response, 'data-order="49.99"')
 
@@ -280,7 +280,7 @@ class ItemDetailDedupUITests(AuthedClientTestCase):
         first = WebUpdate.objects.create(status=WebUpdate.Status.DONE)
         WebUpdate.objects.filter(pk=first.pk).update(timestamp=first_ts)
         SearchResult.objects.create(
-            title="Widget",
+            title="detail widget",
             search_term=self.item.text,
             price=49.99,
             category="Hardware",

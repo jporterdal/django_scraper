@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 
 from . import parsers
 from .fetcher import Fetcher, ResponseTooLargeError
-from .matching import filter_results_for_item_source
 from .models import FetchJob, ItemSource, SearchResult, WebUpdate
 from .ratelimit import (
     DEFER,
@@ -636,6 +635,8 @@ def fetch_one_unit(webupdate, item_source, fetcher=None, attempt=0, run_id=None,
         parser.expected_category = item.expected_values_for_source(
             "category", source.key
         )
+        parser.include_patterns = list(item_source.title_include_patterns or [])
+        parser.exclude_patterns = list(item_source.title_exclude_patterns or [])
         parser.source = source
 
     headers = source.build_request_headers(search_term)
@@ -726,7 +727,10 @@ def fetch_one_unit(webupdate, item_source, fetcher=None, attempt=0, run_id=None,
         )
         return UnitResult(deferred=False, fetch_job=fetch_job)
 
-    if not parser.results:
+    # A JSON parser's raw_count (rows seen from the vendor, before filtering)
+    # falls back to len(parser.results) for non-JSON parsers (e.g. CCSearchParser),
+    # which never filter inside parse_data — see JSONSearchParser.add_result.
+    if not getattr(parser, "raw_count", len(parser.results)):
         logger.info(
             "Empty result set for %(source_key)r item %(item_id)s term %(search_term)r", log_ctx
         )
@@ -742,8 +746,6 @@ def fetch_one_unit(webupdate, item_source, fetcher=None, attempt=0, run_id=None,
         )
         return UnitResult(deferred=False, fetch_job=fetch_job)
 
-    logger.debug(f"Filtering {len(parser.results)} results for {source.key} {search_term}")
-    matching_results = filter_results_for_item_source(parser.results, item_source)
     candidates = [
         {
             "title": result["title"],
@@ -752,7 +754,7 @@ def fetch_one_unit(webupdate, item_source, fetcher=None, attempt=0, run_id=None,
             "product_line": result.get("product_line", ""),
             "instock": 1 if result["instock"] else 0,
         }
-        for result in matching_results
+        for result in parser.results
     ]
     fetch_job = terminalize(
         webupdate,

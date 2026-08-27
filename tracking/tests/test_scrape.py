@@ -1,14 +1,14 @@
 import json
 from unittest.mock import MagicMock, patch
 
-from django.test import RequestFactory, TestCase
+from django.test import TestCase
 
 from tracking import parsers
 from tracking.models import ItemSource, SearchableItem, SearchResult, Source, WebUpdate
 from tracking.scrape import FetchOutcome, run_web_update
 from tracking.tests.base import LinkedSourceTestCase
 from tracking.tests.factories import make_item, make_item_source, make_source
-from tracking.views import SearchableListView
+from tracking.views import _resolve_latest_known_prices
 
 
 class ScrapeOrchestratorTests(LinkedSourceTestCase):
@@ -201,7 +201,7 @@ class SearchTermAndSummaryQueryTests(LinkedSourceTestCase):
     def test_latest_minprice_uses_in_stock_only(self):
         webupdate = WebUpdate.objects.create()
         SearchResult.objects.create(
-            title="In Stock",
+            title="In Stock test item",
             search_term=self.item.text,
             price=100.0,
             category="Hardware",
@@ -211,7 +211,7 @@ class SearchTermAndSummaryQueryTests(LinkedSourceTestCase):
             update=webupdate,
         )
         SearchResult.objects.create(
-            title="Out of Stock",
+            title="Out of Stock test item",
             search_term=self.item.text,
             price=1.0,
             category="Hardware",
@@ -221,13 +221,11 @@ class SearchTermAndSummaryQueryTests(LinkedSourceTestCase):
             update=webupdate,
         )
 
-        request = RequestFactory().get("/")
-        view = SearchableListView()
-        view.request = request
-        annotated_item = view.get_queryset().get(pk=self.item.pk)
+        latest_prices = _resolve_latest_known_prices([self.item])
+        price, title, source_id = latest_prices[self.item.pk]
 
-        self.assertEqual(annotated_item.latest_known_minprice, 100.0)
-        self.assertEqual(annotated_item.latest_known_minprice_title, "In Stock")
+        self.assertEqual(price, 100.0)
+        self.assertEqual(title, "In Stock test item")
 
 class ScrapeHeaderTests(LinkedSourceTestCase):
     """Phase 2 Step 2 — per-source request headers flow through the orchestrator."""
