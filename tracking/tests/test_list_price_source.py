@@ -30,7 +30,7 @@ class ListPriceSourceTagTests(AuthedClientTestCase):
     def test_view_terms_shows_bracketed_source_key(self):
         update = make_web_update()
         make_search_result(
-            self.item, self.src, update, title="Widget", price=70.0
+            self.item, self.src, update, title="priced widget", price=70.0
         )
         response = self.client.get(reverse("view_terms"))
         self.assertEqual(response.status_code, 200)

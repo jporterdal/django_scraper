@@ -151,3 +151,41 @@ class WtFiltersParserProductLineCategoryTests(SimpleTestCase):
         self.assertEqual(len(parser.results), 1)
         self.assertEqual(parser.results[0]["product_line"], "Magic the Gathering Singles")
         self.assertEqual(parser.results[0]["category"], "Strixhaven - Mystical Archive")
+
+
+class WtFiltersParserTitlePatternTests(SimpleTestCase):
+    """Title include/exclude patterns are now enforced inline in add_result()
+    (moved from a separate post-parse pass — see retroactive-result-matching)."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        fixture_path = (
+            settings.BASE_DIR
+            / "tracking"
+            / "fixtures"
+            / "html"
+            / "wt"
+            / "search_results_sample.json"
+        )
+        cls.fixture = json.loads(fixture_path.read_text())
+
+    def _parse(self, **kwargs):
+        parser = WtFiltersParser(term="Lightning Bolt", **kwargs)
+        parser.parse_response(_json_response(self.fixture))
+        return parser
+
+    def test_include_pattern_drops_non_matching_titles(self):
+        parser = self._parse(include_patterns=[r"Foil"])
+        self.assertGreater(len(parser.results), 0)
+        self.assertTrue(all("Foil" in row["title"] for row in parser.results))
+
+    def test_exclude_pattern_drops_matching_titles(self):
+        parser = self._parse(exclude_patterns=[r"Foil"])
+        self.assertGreater(len(parser.results), 0)
+        self.assertFalse(any("Foil" in row["title"] for row in parser.results))
+
+    def test_no_patterns_keeps_all_rows(self):
+        unfiltered = self._parse()
+        patterned = self._parse(include_patterns=[], exclude_patterns=[])
+        self.assertEqual(len(unfiltered.results), len(patterned.results))
