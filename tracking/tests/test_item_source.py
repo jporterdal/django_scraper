@@ -112,16 +112,20 @@ class ItemSourceFormTests(AuthedClientTestCase):
         self.assertEqual(item_source.title_exclude_patterns, ["\\bTi\\b", "SUPER"])
 
 class ResultMatchesItemSourceTests(TestCase):
-    """Phase 2 Step 5 — result_matches_item_source() pattern-aware matching."""
+    """Phase 2 Step 5 — result_matches_item_source() pattern-aware matching.
+
+    ``item_text=""`` disables the (separately tested — see test_matching.py)
+    search-term check so these cases isolate title include/exclude behavior.
+    """
 
     @classmethod
     def setUpTestData(cls):
         cls.source = make_cc_source(name="Test Source")
-        cls.item = make_item(text="rtx 5070")
 
-    def _item_source(self, include=None, exclude=None):
+    def _item_source(self, include=None, exclude=None, item_text=""):
+        item = make_item(text=item_text)
         return ItemSource(
-            item=self.item,
+            item=item,
             source=self.source,
             title_include_patterns=include or [],
             title_exclude_patterns=exclude or [],
@@ -132,7 +136,7 @@ class ResultMatchesItemSourceTests(TestCase):
 
         item_source = self._item_source(include=["Lightning Bolt"])
         self.assertTrue(
-            result_matches_item_source("Lightning Bolt (NM)", item_source)
+            result_matches_item_source("Lightning Bolt (NM)", "", "", item_source)
         )
 
     def test_result_matches_item_source_exclude(self):
@@ -140,7 +144,7 @@ class ResultMatchesItemSourceTests(TestCase):
 
         item_source = self._item_source(exclude=["Foil"])
         self.assertFalse(
-            result_matches_item_source("Lightning Bolt [Foil]", item_source)
+            result_matches_item_source("Lightning Bolt [Foil]", "", "", item_source)
         )
 
     def test_empty_patterns_pass_all(self):
@@ -148,21 +152,23 @@ class ResultMatchesItemSourceTests(TestCase):
 
         item_source = self._item_source()
         self.assertTrue(
-            result_matches_item_source("Anything At All", item_source)
+            result_matches_item_source("Anything At All", "", "", item_source)
         )
 
     def test_rtx_5070_excludes_ti_word_boundary(self):
         from tracking.matching import result_matches_item_source
 
-        item_source = self._item_source(include=["RTX 5070"], exclude=["\\bTi\\b"])
+        item_source = self._item_source(
+            include=["RTX 5070"], exclude=["\\bTi\\b"], item_text="rtx 5070"
+        )
         self.assertTrue(
             result_matches_item_source(
-                "MSI GeForce RTX 5070 Gaming Trio OC 16GB", item_source
+                "MSI GeForce RTX 5070 Gaming Trio OC 16GB", "", "", item_source
             )
         )
         self.assertFalse(
             result_matches_item_source(
-                "MSI GeForce RTX 5070 Ti Gaming Trio OC 16GB", item_source
+                "MSI GeForce RTX 5070 Ti Gaming Trio OC 16GB", "", "", item_source
             )
         )
 

@@ -25,7 +25,7 @@ class TimezoneDisplayTests(LinkedSourceTestCase):
             self.item,
             self.source,
             update,
-            title="Test Product",
+            title="test item",
             price=19.99,
         )
 

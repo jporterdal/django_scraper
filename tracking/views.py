@@ -3,12 +3,14 @@ from django.http import HttpResponse, JsonResponse
 from django.views.generic import DetailView, ListView
 from django.views.generic.edit import CreateView, DeleteView, UpdateView, View
 from django.urls import reverse
-from django.db.models import Count, OuterRef, Q, Subquery
+from django.db.models import Count, F, OuterRef, Q, Subquery, Window
+from django.db.models.functions import RowNumber
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.shortcuts import get_object_or_404
 from urllib.parse import urlparse
+import logging
 from .forms import (
     BulkAddItemsForm,
     BulkEditItemsForm,
@@ -43,6 +45,8 @@ import json
 from collections import defaultdict
 from datetime import timedelta
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_next_url(request, candidate=None):
@@ -209,10 +213,108 @@ def _source_price_points(stored_by_update, source_jobs):
     return sorted(points_by_update.values(), key=lambda p: p["timestamp"])
 
 
+def _resolve_latest_known_prices(items):
+    """Per-item Latest price, retroactively re-validated against current criteria.
+
+    A source's results are independently deduplicated per distinct title
+    (``scrape.py``'s ``_dedupe_unit_candidates`` keys on ``(item, source,
+    title)``), so a single source can carry several concurrently-valid,
+    independently-timestamped title "threads" at once. Resolution is
+    two-level, in one windowed query (not one query per source or thread —
+    see retroactive-result-matching and design.md Decision 3):
+
+    - Per thread ``(item_id, source_id, title)``: walk that thread's in-stock
+      rows newest-first and take the first one that still matches the item's/
+      item-source's *current* relevance criteria. A thread with no
+      currently-matching row contributes nothing — this scoping (rather than
+      partitioning by ``(item_id, source_id)`` alone) is what prevents one
+      thread's fresh timestamp from shadowing a sibling thread's still-current,
+      untouched price.
+    - Per source: the minimum, cheapest-then-alphabetical-title, across that
+      source's thread winners.
+
+    Returns ``{item_id: (price, title, source_id)}`` for items with at least
+    one contributing source; cross-source ties resolve cheapest-then-source_id,
+    matching this view's previous SQL ordering.
+    """
+    item_ids = [item.pk for item in items]
+    if not item_ids:
+        return {}
+
+    ranked_results = (
+        SearchResult.objects.filter(item_id__in=item_ids, instock=1)
+        .annotate(
+            _thread_rank=Window(
+                expression=RowNumber(),
+                partition_by=[F("item_id"), F("source_id"), F("title")],
+                order_by=["-update__timestamp", "price", "title"],
+            )
+        )
+        .order_by("item_id", "source_id", "title", "_thread_rank")
+    )
+
+    rows_by_thread = defaultdict(list)
+    for row in ranked_results:
+        rows_by_thread[(row.item_id, row.source_id, row.title)].append(row)
+
+    threads_by_pair = defaultdict(list)
+    for item_id, source_id, title in rows_by_thread:
+        threads_by_pair[(item_id, source_id)].append(title)
+
+    item_sources = ItemSource.objects.filter(item_id__in=item_ids).select_related(
+        "item", "source"
+    )
+
+    winners_by_item = defaultdict(list)
+    for item_source in item_sources:
+        pair = (item_source.item_id, item_source.source_id)
+        thread_winners = []
+        for title in threads_by_pair.get(pair, ()):
+            rows = rows_by_thread[(item_source.item_id, item_source.source_id, title)]
+            winner = next(
+                (
+                    row
+                    for row in rows
+                    if result_matches_item_source(
+                        row.title, row.category, row.product_line, item_source
+                    )
+                ),
+                None,
+            )
+            if winner is None:
+                logger.info(
+                    "Retroactive match: item=%s source=%s title=%r exhausted thread "
+                    "(%d rows) with no currently-matching result",
+                    item_source.item_id, item_source.source_id, title, len(rows),
+                )
+            else:
+                thread_winners.append(winner)
+
+        if thread_winners:
+            source_winner = min(thread_winners, key=lambda row: (row.price, row.title))
+            winners_by_item[item_source.item_id].append(
+                (source_winner.price, item_source.source_id, source_winner.title)
+            )
+
+    latest_prices = {}
+    for item_id, winners in winners_by_item.items():
+        price, source_id, title = min(winners, key=lambda winner: (winner[0], winner[1]))
+        latest_prices[item_id] = (price, title, source_id)
+    return latest_prices
+
+
 def _build_source_chart_series(item, results, fetch_jobs):
-    """Per-source chart points: solid for stored rows, hollow for unchanged fetches."""
+    """Per-source chart points: solid for stored rows, hollow for unchanged fetches.
+
+    Skips any row whose ``matches`` flag is False — a row that no longer
+    satisfies the item's/item-source's *current* relevance criteria (see
+    retroactive-result-matching) still appears in the raw results table, but
+    is excluded from the price-history chart it feeds.
+    """
     stored_by_source_update = defaultdict(dict)
     for result in results:
+        if not result.matches:
+            continue
         if not result.instock or result.price is None:
             continue
         existing = stored_by_source_update[result.source_id].get(result.update_id)
@@ -477,6 +579,13 @@ class SearchableListView(ListView):
         context = super().get_context_data(**kwargs)
         object_list = list(context["object_list"])
 
+        latest_prices = _resolve_latest_known_prices(object_list)
+        for item in object_list:
+            price, title, source_id = latest_prices.get(item.pk, (None, None, None))
+            item.latest_known_minprice = price
+            item.latest_known_minprice_title = title
+            item.latest_known_minprice_source = source_id
+
         item_source_pairs = []
         for item in object_list:
             source_id = getattr(item, "latest_known_minprice_source", None)
@@ -562,6 +671,7 @@ class SearchableListView(ListView):
                     .count()
                 )
 
+        context["object_list"] = object_list
         _annotate_item_list_status(context["object_list"])
         context["item_list_stale_threshold_hours"] = ITEM_LIST_STALE_THRESHOLD_HOURS
         return context
@@ -581,38 +691,13 @@ class SearchableListView(ListView):
             .values("webupdate__timestamp")[:1]
         )
 
-        # Each source's own most recent in-stock price. Scraper dedup skips
-        # re-storing a SearchResult when a source's price is unchanged, so a
-        # source's last stored row remains its current price even if other
-        # sources get re-checked/stored on later updates — comparing sources
-        # only within one shared "latest" update would silently drop stale-
-        # but-still-current sources from the min-price comparison.
-        source_latest = SearchResult.objects.filter(
-            item=OuterRef("item_id"),
-            source=OuterRef("source_id"),
-            instock=1,
-        ).order_by("-update__timestamp", "price", "title")
-        cheapest_item_source = (
-            ItemSource.objects.filter(item=OuterRef("pk"))
-            .annotate(
-                _latest_price=Subquery(source_latest.values("price")[:1]),
-                _latest_title=Subquery(source_latest.values("title")[:1]),
-            )
-            .exclude(_latest_price__isnull=True)
-            .order_by("_latest_price", "source_id")
-        )
-        return queryset.annotate(
-            latest_known_minprice=Subquery(
-                cheapest_item_source.values("_latest_price")[:1]
-            ),
-            latest_known_minprice_title=Subquery(
-                cheapest_item_source.values("_latest_title")[:1]
-            ),
-            latest_known_minprice_source=Subquery(
-                cheapest_item_source.values("source_id")[:1]
-            ),
-            last_checked_at=last_checked,
-        )
+        # "Latest price" (latest_known_minprice/_title/_source) is no longer a
+        # SQL annotation here — it requires walking each source's recent rows
+        # in Python against current relevance criteria (see
+        # retroactive-result-matching), which regex-based patterns can't
+        # express in a portable SQL subquery. Computed in get_context_data via
+        # _resolve_latest_known_prices() and set as plain attributes instead.
+        return queryset.annotate(last_checked_at=last_checked)
 
 
 class SearchableItemDetailView(DetailView):
@@ -638,6 +723,13 @@ class SearchableItemDetailView(DetailView):
         )
         item_source_by_key = {isrc.source_id: isrc for isrc in item_sources}
 
+        for r in results:
+            isrc = item_source_by_key.get(r.source_id)
+            r.matches = (
+                result_matches_item_source(r.title, r.category, r.product_line, isrc)
+                if isrc else True
+            )
+
         fetch_jobs = list(
             FetchJob.objects.filter(item=item)
             .select_related("source", "webupdate")
@@ -647,10 +739,6 @@ class SearchableItemDetailView(DetailView):
         chart_data, chart_sources, source_fetch_notes = _build_source_chart_series(
             item, results, fetch_jobs
         )
-
-        for r in results:
-            isrc = item_source_by_key.get(r.source_id)
-            r.matches = result_matches_item_source(r.title, isrc) if isrc else True
 
         context["results"] = results
         context["chart_data_json"] = json.dumps(chart_data)

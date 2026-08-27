@@ -1,38 +1,13 @@
 import re
-import unicodedata
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from search_scrape.search_scrape import SearchParser
 from django.utils import timezone
 import logging
 
+from . import matching
 from .models import ObservedCategoryValue
 
 logger = logging.getLogger(__name__)
-
-
-def _normalize_for_match(value):
-    """Lowercase, fold diacritics, and collapse whitespace, for term/title comparison.
-
-    Diacritic folding only covers characters that decompose into a base letter
-    plus a combining mark under NFKD (e.g. i + acute accent). Characters that
-    are their own distinct letter rather than an accented variant of one -
-    e.g. German ß, æ, ø - do not decompose this way and are intentionally left
-    as exact-match only rather than growing this into a transliteration engine.
-    """
-    text = unicodedata.normalize("NFKD", str(value).strip().lower())
-    text = "".join(c for c in text if not unicodedata.combining(c))
-    return re.sub(r"\s+", " ", text)
-
-
-def _normalized_substring_match(expected, signal):
-    """True if normalized ``expected`` appears as a literal substring of normalized ``signal``.
-
-    ``expected`` is ``re.escape()``'d before matching so callers (item-level
-    ``expected_product_line``/``expected_category`` values) can contain regex
-    metacharacters without any special-character surprises.
-    """
-    pattern = re.escape(_normalize_for_match(expected))
-    return re.search(pattern, _normalize_for_match(signal)) is not None
 
 
 def _coerce_signal(value):
@@ -46,16 +21,28 @@ class JSONSearchParser:
     """Base class for JSON API search parsers. Subclasses implement parse_data()."""
     data_keys = ["category", "title", "price", "instock"]
 
-    def __init__(self, term="", expected_product_line=None, expected_category=None, source=None):
+    def __init__(
+        self,
+        term="",
+        expected_product_line=None,
+        expected_category=None,
+        source=None,
+        include_patterns=None,
+        exclude_patterns=None,
+    ):
         self.term = term
         self.expected_product_line = list(expected_product_line or [])
         self.expected_category = list(expected_category or [])
+        self.include_patterns = list(include_patterns or [])
+        self.exclude_patterns = list(exclude_patterns or [])
         self.source = source
         self.url = None
         self.results = []
+        self.raw_count = 0
 
     def _init_vars(self):
         self.results = []
+        self.raw_count = 0
 
     def parse_response(self, response):
         self._init_vars()
@@ -99,34 +86,40 @@ class JSONSearchParser:
         )
 
     def add_result(self, title, price, instock, category="", product_line=""):
+        # Counted before any filtering decision, so scrape.py can distinguish
+        # "vendor returned zero rows" (EMPTY) from "vendor returned rows but
+        # all were filtered out here" (SUCCESS, zero stored) — self.results
+        # alone can no longer tell those apart now that filtering happens
+        # inline instead of in a separate post-parse pass.
+        self.raw_count += 1
         self._record_observed(ObservedCategoryValue.FieldName.CATEGORY, category)
         self._record_observed(ObservedCategoryValue.FieldName.PRODUCT_LINE, product_line)
 
-        term_normalized = _normalize_for_match(self.term)
-        if term_normalized and term_normalized not in _normalize_for_match(title):
+        if not matching.term_matches(title, self.term):
             logger.debug(
                 "Dropping off-term result: title=%r does not contain term=%r",
                 title, self.term,
             )
             return
 
-        if self.expected_product_line and not any(
-            _normalized_substring_match(value, product_line)
-            for value in self.expected_product_line
-        ):
+        if not matching.value_matches_any(product_line, self.expected_product_line):
             logger.debug(
                 "Dropping off-product-line result: title=%r product_line=%r expected_product_line=%r",
                 title, product_line, self.expected_product_line,
             )
             return
 
-        if self.expected_category and not any(
-            _normalized_substring_match(value, category)
-            for value in self.expected_category
-        ):
+        if not matching.value_matches_any(category, self.expected_category):
             logger.debug(
                 "Dropping off-category result: title=%r category=%r expected_category=%r",
                 title, category, self.expected_category,
+            )
+            return
+
+        if not matching.title_matches_rules(title, self.include_patterns, self.exclude_patterns):
+            logger.debug(
+                "Dropping pattern-excluded result: title=%r include_patterns=%r exclude_patterns=%r",
+                title, self.include_patterns, self.exclude_patterns,
             )
             return
 
