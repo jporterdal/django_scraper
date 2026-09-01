@@ -30,14 +30,16 @@
                 <h4 class="mb-0">All Items</h4>
                 <div class="d-flex flex-wrap gap-2 align-items-center">
                     <a href="{% url 'add_term' %}" class="btn btn-success btn-sm">Add New Item</a>
-                    <a href="{% url 'bulk_add' %}" class="btn btn-success btn-sm">Bulk Add</a>
-                    <a href="{% url 'view_tags' %}" class="btn btn-outline-primary btn-sm">Manage Tags</a>
-                    <a href="{% url 'view_sources' %}" class="btn btn-outline-primary btn-sm">Manage Sources</a>
-                    <button type="submit" name="mode" value="selected" class="btn btn-warning btn-sm">Update Selected</button>
-                    <button type="submit" name="mode" value="all" class="btn btn-outline-warning btn-sm">Update All Active</button>
+                    <div class="btn-group">
+                        <button type="submit" name="mode" value="selected" class="btn btn-warning btn-sm">Update Selected</button>
+                        <button type="button" class="btn btn-warning btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+                            <span class="visually-hidden">Toggle update scope</span>
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><button type="submit" name="mode" value="all" class="dropdown-item">Update All Active</button></li>
+                        </ul>
+                    </div>
                     <button type="submit" formaction="{% url 'bulk_edit_items' %}" class="btn btn-outline-warning btn-sm">Bulk Edit Selected</button>
-                    <a href="{% url 'view_schedules' %}" class="btn btn-outline-primary btn-sm">Schedules</a>
-                    <a href="{% url 'view_updates' %}" class="btn btn-outline-secondary btn-sm">Scrape History</a>
                 </div>
             </div>
             <div class="card-body">
