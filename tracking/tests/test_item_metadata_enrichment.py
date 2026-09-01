@@ -194,6 +194,25 @@ class ScryfallProviderTests(TestCase):
         self.assertNotIn("Mozilla", user_agent)
 
     @patch("tracking.metadata_providers.requests.get")
+    def test_resolve_restricts_search_to_paper_printings(self, mock_get):
+        mock_get.return_value = _mock_response(data={"data": []})
+
+        self.provider.resolve(self.item)
+
+        _, kwargs = mock_get.call_args
+        self.assertEqual(kwargs["params"]["q"], "(Lightning Bolt) game:paper")
+
+    @patch("tracking.metadata_providers.requests.get")
+    def test_resolve_digital_only_card_is_no_match(self, mock_get):
+        # Scryfall applies the `game:paper` filter server-side, so a name that
+        # only exists as an Alchemy/Arena/MTGO printing comes back empty.
+        mock_get.return_value = _mock_response(data={"data": []})
+
+        result = self.provider.resolve(self.item)
+
+        self.assertEqual(result.status, ResolutionStatus.NO_MATCH)
+
+    @patch("tracking.metadata_providers.requests.get")
     def test_resolve_multiple_cards_is_needs_review(self, mock_get):
         mock_get.return_value = _mock_response(
             data={

@@ -93,7 +93,7 @@ class ScryfallProvider(MetadataProvider):
     def resolve(self, item):
         response = requests.get(
             self.SEARCH_URL,
-            params={"q": item.text},
+            params={"q": f"({item.text}) game:paper"},
             headers=self._headers(),
             timeout=self.REQUEST_TIMEOUT,
         )

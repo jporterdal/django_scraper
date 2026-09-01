@@ -26,7 +26,10 @@
 
 <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom">
     <div class="container">
-        <a class="navbar-brand" href="{% url 'view_terms' %}">Pricing Tracker</a>
+        <a class="navbar-brand d-flex align-items-center gap-2" href="{% url 'view_terms' %}">
+            <img src="{% static 'tracking/images/logo.png' %}" alt="Pricing Tracker" width="42" height="42">
+            Pricing Tracker
+        </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav"
                 aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
@@ -36,20 +39,23 @@
                 <li class="nav-item">
                     <a class="nav-link" href="{% url 'view_terms' %}">Items</a>
                 </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{% url 'view_tags' %}">Tags</a>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Add</a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="{% url 'add_term' %}">Add New Item</a></li>
+                        <li><a class="dropdown-item" href="{% url 'bulk_add' %}">Bulk Add</a></li>
+                    </ul>
                 </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{% url 'view_sources' %}">Sources</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{% url 'view_schedules' %}">Schedules</a>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Manage</a>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="{% url 'view_tags' %}">Tags</a></li>
+                        <li><a class="dropdown-item" href="{% url 'view_sources' %}">Sources</a></li>
+                        <li><a class="dropdown-item" href="{% url 'view_schedules' %}">Schedules</a></li>
+                    </ul>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link" href="{% url 'view_updates' %}">Scrape History</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{% url 'bulk_add' %}">Bulk Add</a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link" href="/admin/">Admin</a>
