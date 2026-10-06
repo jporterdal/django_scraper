@@ -28,10 +28,12 @@
         <div class="card-body" style="max-height: 12rem; overflow-y: auto;">
             <ul class="list-unstyled mb-0">
                 {% for result in results %}
-                <li class="{% if result.success %}text-success{% else %}text-danger{% endif %}">
+                <li class="{% if result.success %}text-success{% elif result.skipped %}text-muted{% else %}text-danger{% endif %}">
                     {{ result.item.text }} —
                     {% if result.success %}
                         Applied
+                    {% elif result.skipped %}
+                        {{ result.error }}
                     {% else %}
                         Failed: {{ result.error }}
                     {% endif %}
@@ -210,7 +212,7 @@
                                                 {% else %}
                                                     <p class="text-muted small mb-0">No patterns defined.</p>
                                                 {% endif %}
-                                                {% include "tracking/_bulk_edit_pattern_manual_row.html" with field=group.include_manual_field %}
+                                                {% if group.include_manual_field %}{% include "tracking/_bulk_edit_pattern_manual_row.html" with field=group.include_manual_field %}{% endif %}
                                             </div>
                                             <div class="col-md-6">
                                                 <div class="small fw-semibold mb-1">Exclude</div>
@@ -223,7 +225,7 @@
                                                 {% else %}
                                                     <p class="text-muted small mb-0">No patterns defined.</p>
                                                 {% endif %}
-                                                {% include "tracking/_bulk_edit_pattern_manual_row.html" with field=group.exclude_manual_field %}
+                                                {% if group.exclude_manual_field %}{% include "tracking/_bulk_edit_pattern_manual_row.html" with field=group.exclude_manual_field %}{% endif %}
                                             </div>
                                         </div>
                                     </div>

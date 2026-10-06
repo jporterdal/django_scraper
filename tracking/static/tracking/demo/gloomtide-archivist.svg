@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="244" height="340" viewBox="0 0 244 340" role="img" aria-label="Gloomtide Archivist (demo card)">
+  <rect x="2" y="2" width="240" height="336" rx="16" fill="#1b1b1b"/>
+  <rect x="12" y="12" width="220" height="316" rx="10" fill="#1f3a93"/>
+  <rect x="22" y="22" width="200" height="30" rx="6" fill="#ffffff" fill-opacity="0.88"/>
+  <text x="32" y="43" font-family="Georgia, serif" font-size="14" fill="#1b1b1b">Gloomtide Archivist</text>
+  <rect x="22" y="60" width="200" height="150" rx="6" fill="#000000" fill-opacity="0.25"/>
+  <g transform="translate(72 85)" fill="#ffffff" fill-opacity="0.9"><path d="M6 50 C26 20 74 20 94 50 C74 80 26 80 6 50 Z"/><circle cx="50" cy="50" r="16" fill="#ffffff" fill-opacity="0.85"/><circle cx="50" cy="50" r="7"/></g>
+  <rect x="22" y="218" width="200" height="22" rx="5" fill="#ffffff" fill-opacity="0.8"/>
+  <text x="30" y="234" font-family="Georgia, serif" font-size="11" fill="#1b1b1b">Creature — Merfolk Wizard</text>
+  <rect x="22" y="248" width="200" height="70" rx="6" fill="#ffffff" fill-opacity="0.8"/>
+  <text x="30" y="270" font-family="Georgia, serif" font-size="11" font-style="italic" fill="#333333">Tidebound Depths</text>
+  <text x="30" y="306" font-family="Georgia, serif" font-size="10" fill="#555555">Demo card · not a real product</text>
+</svg>

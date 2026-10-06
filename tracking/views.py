@@ -23,9 +23,12 @@ from .forms import (
     apply_bulk_edit,
     create_items_from_bulk_add,
 )
+from .demo import is_demo
+from .demo import policy as demo_policy
+from .demo.protection import PROTECTED_MESSAGE, is_protected
 from .matching import result_matches_item_source
 from .metadata import get_item_metadata, request_metadata_refresh
-from .metadata_providers import PROVIDERS as metadata_provider_registry
+from .metadata_providers import get_metadata_providers
 from .models import (
     FetchJob,
     ItemMetadata,
@@ -63,6 +66,36 @@ def _safe_next_url(request, candidate=None):
         return candidate
     return None
 
+
+
+class DemoProtectedObjectMixin:
+    """Demo mode: refuse any request (view or write) aimed at protected seed data.
+
+    ``get_protected_target`` returns the seed-checkable object; refused
+    requests redirect with a message and never reach the form or delete logic.
+    """
+
+    def get_protected_target(self):
+        return self.get_object()
+
+    def get_protected_redirect_url(self, target):
+        return reverse("view_terms")
+
+    def dispatch(self, request, *args, **kwargs):
+        if is_demo():
+            target = self.get_protected_target()
+            if is_protected(target):
+                messages.warning(request, PROTECTED_MESSAGE)
+                return redirect(self.get_protected_redirect_url(target))
+        return super().dispatch(request, *args, **kwargs)
+
+
+def _refuse_protected_item(request, item):
+    """Redirect response for a metadata action on a protected item, else None."""
+    if is_protected(item):
+        messages.warning(request, PROTECTED_MESSAGE)
+        return redirect("item_detail", pk=item.pk)
+    return None
 
 
 # Create your views here.
@@ -415,6 +448,16 @@ class SearchableCreateView(CreateView):
     def get_success_url(self):
         return reverse("view_terms")
 
+    def form_valid(self, form):
+        if is_demo() and demo_policy.visitor_item_limit_reached():
+            messages.error(
+                self.request,
+                f"The demo item limit ({settings.DEMO_MAX_VISITOR_ITEMS}) has been reached. "
+                "The sandbox resets after an hour of inactivity.",
+            )
+            return redirect("view_terms")
+        return super().form_valid(form)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["form_title"] = "Add New Search Term"
@@ -438,6 +481,15 @@ class BulkAddItemsView(View):
         form = BulkAddItemsForm(request.POST)
         formset = ItemSourceFormSet(request.POST)
         if form.is_valid() and formset.is_valid():
+            if is_demo() and demo_policy.visitor_item_limit_reached(
+                adding=len(form.cleaned_data["search_terms"])
+            ):
+                messages.error(
+                    request,
+                    f"Adding these would exceed the demo item limit "
+                    f"({settings.DEMO_MAX_VISITOR_ITEMS}); nothing was added.",
+                )
+                return self._render(request, form, formset)
             items = create_items_from_bulk_add(
                 terms=form.cleaned_data["search_terms"],
                 tag=form.cleaned_data["tag"],
@@ -556,7 +608,7 @@ class BulkEditItemsView(View):
         )
 
 
-class SearchableUpdateView(UpdateView):
+class SearchableUpdateView(DemoProtectedObjectMixin, UpdateView):
     model = SearchableItem
     form_class = SearchableItemForm
     template_name = "tracking/searchableitem_form.html"
@@ -648,7 +700,7 @@ class SearchableListView(ListView):
             item.metadata_thumbnail_url = ""
             item_metadata = get_item_metadata(item)
             if item_metadata is not None and item_metadata.status == ItemMetadata.Status.MATCHED:
-                provider_cls = metadata_provider_registry.get(item.metadata_provider_key)
+                provider_cls = get_metadata_providers().get(item.metadata_provider_key)
                 if provider_cls is not None:
                     display = provider_cls().to_display(item_metadata.payload)
                     item.metadata_thumbnail_url = display.get("thumbnail_url", "")
@@ -755,12 +807,13 @@ class SearchableItemDetailView(DetailView):
         # live `run_huey` consumer process, which this request-serving
         # process has no way to confirm is actually running.
         context["metadata_fetch_may_not_process"] = (
-            item_metadata is not None
+            not is_demo()
+            and item_metadata is not None
             and item_metadata.status in (ItemMetadata.Status.UNFETCHED, ItemMetadata.Status.PENDING)
             and schedules_may_not_fire()
         )
         if item_metadata is not None:
-            provider_cls = metadata_provider_registry.get(item.metadata_provider_key)
+            provider_cls = get_metadata_providers().get(item.metadata_provider_key)
             if provider_cls is not None:
                 provider = provider_cls()
                 if item_metadata.status == ItemMetadata.Status.MATCHED:
@@ -782,6 +835,9 @@ class MetadataRetryView(View):
 
     def post(self, request, pk):
         item = get_object_or_404(SearchableItem, pk=pk)
+        refused = _refuse_protected_item(request, item)
+        if refused:
+            return refused
         request_metadata_refresh(item)
         messages.success(request, "Metadata refresh requested.")
         return redirect("item_detail", pk=item.pk)
@@ -797,6 +853,9 @@ class MetadataSelectCandidateView(View):
 
     def post(self, request, pk):
         item = get_object_or_404(SearchableItem, pk=pk)
+        refused = _refuse_protected_item(request, item)
+        if refused:
+            return refused
         external_id = request.POST.get("external_id", "")
         item_metadata = get_object_or_404(ItemMetadata, item=item)
         candidates = (item_metadata.payload or {}).get("candidates", [])
@@ -824,6 +883,9 @@ class MetadataSetExternalIdView(View):
 
     def post(self, request, pk):
         item = get_object_or_404(SearchableItem, pk=pk)
+        refused = _refuse_protected_item(request, item)
+        if refused:
+            return refused
         external_id = (request.POST.get("external_id") or "").strip()
         if not external_id:
             messages.error(request, "Enter an external identifier.")
@@ -850,6 +912,15 @@ class TagCreateView(CreateView):
     model = Tag
     fields = ["name", "color"]
     template_name = "tracking/tag_form.html"
+
+    def form_valid(self, form):
+        if is_demo() and demo_policy.visitor_tag_limit_reached():
+            messages.error(
+                self.request,
+                f"The demo tag limit ({settings.DEMO_MAX_VISITOR_TAGS}) has been reached.",
+            )
+            return redirect("view_tags")
+        return super().form_valid(form)
 
     def get_success_url(self):
         messages.success(self.request, f"Tag “{self.object.name}” created.")
@@ -885,10 +956,13 @@ class TagCreateView(CreateView):
         return form
 
 
-class TagUpdateView(UpdateView):
+class TagUpdateView(DemoProtectedObjectMixin, UpdateView):
     model = Tag
     fields = ["name", "color"]
     template_name = "tracking/tag_form.html"
+
+    def get_protected_redirect_url(self, target):
+        return reverse("view_tags")
 
     def get_success_url(self):
         messages.success(self.request, f"Tag “{self.object.name}” updated.")
@@ -912,10 +986,13 @@ class TagUpdateView(UpdateView):
         return form
 
 
-class TagDeleteView(DeleteView):
+class TagDeleteView(DemoProtectedObjectMixin, DeleteView):
     model = Tag
     template_name = "tracking/tag_confirm_delete.html"
     context_object_name = "tag"
+
+    def get_protected_redirect_url(self, target):
+        return reverse("view_tags")
 
     def get_success_url(self):
         messages.success(self.request, f"Tag “{self.object.name}” deleted.")
@@ -927,13 +1004,16 @@ class TagDeleteView(DeleteView):
         return context
 
 
-class ItemSourceUpdateView(UpdateView):
+class ItemSourceUpdateView(DemoProtectedObjectMixin, UpdateView):
     # Phase 2 Step 5, Task 4 — minimal edit route so include/exclude patterns are
     # editable without the Django admin. Step 7 will add the full ItemSource
     # management UI (list/add/delete); it should reuse this shared ItemSourceForm.
     model = ItemSource
     form_class = ItemSourceForm
     template_name = "tracking/item_source_form.html"
+
+    def get_protected_redirect_url(self, target):
+        return reverse("item_sources", args=[target.item_id])
 
     def get_success_url(self):
         messages.success(self.request, "Item source updated.")
@@ -1027,10 +1107,16 @@ class ItemSourceListView(ListView):
         return context
 
 
-class ItemSourceCreateView(CreateView):
+class ItemSourceCreateView(DemoProtectedObjectMixin, CreateView):
     model = ItemSource
     form_class = ItemSourceForm
     template_name = "tracking/item_source_form.html"
+
+    def get_protected_target(self):
+        return get_object_or_404(SearchableItem, pk=self.kwargs["pk"])
+
+    def get_protected_redirect_url(self, target):
+        return reverse("item_sources", args=[target.pk])
 
     def dispatch(self, request, *args, **kwargs):
         self.item = get_object_or_404(SearchableItem, pk=self.kwargs["pk"])
@@ -1061,10 +1147,13 @@ class ItemSourceCreateView(CreateView):
         return context
 
 
-class ItemSourceDeleteView(DeleteView):
+class ItemSourceDeleteView(DemoProtectedObjectMixin, DeleteView):
     model = ItemSource
     template_name = "tracking/item_source_confirm_delete.html"
     context_object_name = "item_source"
+
+    def get_protected_redirect_url(self, target):
+        return reverse("item_sources", args=[target.item_id])
 
     def get_success_url(self):
         messages.success(self.request, "Item source removed.")
@@ -1132,6 +1221,24 @@ class UpdateFromWebView(View):
                 "Assign sources to active items first.",
             )
             return redirect("view_terms")
+
+        if is_demo():
+            if demo_policy.search_results_full():
+                messages.error(
+                    request,
+                    "The demo has stored as many results as it allows; updates are "
+                    "paused until the sandbox resets after an hour of inactivity.",
+                )
+                return redirect("view_terms")
+            claimed, wait_seconds = demo_policy.claim_update_slot()
+            if not claimed:
+                messages.warning(
+                    request,
+                    f"Demo updates run at most once every "
+                    f"{settings.DEMO_UPDATE_MIN_INTERVAL_SECONDS} seconds; "
+                    f"try again in {wait_seconds} second{'s' if wait_seconds != 1 else ''}.",
+                )
+                return redirect("view_terms")
 
         item_ids = None
         if items is not None:
@@ -1304,6 +1411,16 @@ def _item_export_rows(item):
     return rows
 
 
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
+
+
+def _csv_safe(value):
+    """Neutralize spreadsheet formula injection (demo visitors download each other's data)."""
+    if isinstance(value, str) and value.startswith(_CSV_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 def _export_filename(item, extension):
     return f"item-{item.pk}-price-history.{extension}"
 
@@ -1316,7 +1433,10 @@ def export_item_csv(request, pk):
     )
     writer = csv.DictWriter(response, fieldnames=EXPORT_FIELDNAMES)
     writer.writeheader()
+    demo = is_demo()
     for row in _item_export_rows(item):
+        if demo:
+            row = {key: _csv_safe(value) for key, value in row.items()}
         writer.writerow(row)
     return response
 

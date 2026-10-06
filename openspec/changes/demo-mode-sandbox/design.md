@@ -39,7 +39,9 @@ Current state that shapes the approach (see proposal.md, Why, for motivation):
 - no `file` log handler (this already follows from `DEBUG=False`)
 - `SESSION_ENGINE="django.contrib.sessions.backends.signed_cookies"` and `MESSAGE_STORAGE` set to cookie storage
 - `DATA_UPLOAD_MAX_MEMORY_SIZE` and `DATA_UPLOAD_MAX_NUMBER_FIELDS` lowered
-- the demo middleware stack (D3, D8), with WhiteNoise inserted after `SecurityMiddleware`
+- WhiteNoise inserted after `SecurityMiddleware`. The demo sits behind the existing nginx proxy, but nginx runs as a separate service (see `docs/deployment_steps.md`) and can't read the web container's `staticfiles/`. So nginx proxies `/static/` through to gunicorn, WhiteNoise serves it from there, and nginx can still cache it.
+
+The demo middleware (D3, D4, D9) is **always** listed in `MIDDLEWARE` and does nothing unless `settings.DEMO_MODE` is true. Demo behavior is then testable with `override_settings(DEMO_MODE=True)` without rebuilding the middleware stack or URLconf at import time.
 - a `demo` context processor
 
 The demo-only settings live in the same block, each overridable by an environment variable of the same name:
@@ -70,7 +72,7 @@ The demo `DATABASES["default"]["OPTIONS"]` sets:
 *Alternative considered:* Postgres for the demo. Rejected because it adds a service, which goes against the resource goal. The reset design (D9) is specific to SQLite.
 
 ### D3. Demo user, without login or sessions
-A `DemoUserMiddleware` runs after `AuthenticationMiddleware` and before `LoginRequiredMiddleware`. It sets `request.user` to a single fixed `demo` user: not staff, not superuser, unusable password, created by `demo_reset` if missing. There is no `login()` call, so nothing is written to the session. In demo mode `urls.py` doesn't mount `admin/` or `accounts/`. `base.html` hides the Admin link and the logout form behind the context-processor flag, since `{% url 'logout' %}` would fail to resolve otherwise.
+A `DemoUserMiddleware` runs after `AuthenticationMiddleware` and before `LoginRequiredMiddleware`. It sets `request.user` to a single fixed `demo` user: not staff, not superuser, unusable password, created by `demo_reset` if missing. There is no `login()` call, so nothing is written to the session. In demo mode the demo middleware returns 404 for any path under `admin/` or `accounts/`, so the routes stay mounted but can't be reached. This avoids changing the URLconf at import time (see D1). `base.html` hides the Admin link and the logout form behind the context-processor flag, since `{% url 'logout' %}` would fail to resolve otherwise.
 
 ### D4. Deny-by-default write allowlist
 A `DemoWriteAllowlistMiddleware` resolves `request.resolver_match.url_name` for any method outside GET/HEAD/OPTIONS. It returns 403 unless the name is in a single `DEMO_ALLOWED_WRITE_URL_NAMES` frozenset, defined in a new `tracking/demo/` package:
@@ -105,6 +107,20 @@ A `tracking/demo/data/` package holds JSON, plus images under `tracking/static/t
 - **`patterns.json`**: the preset patterns.
 
 The demo dataset is fictional rather than trimmed copies of the captured vendor fixtures. This avoids publishing real stores' names and prices and real vendor URLs, and keeps the files small (the captured hfx fixture is 2.6 MB).
+
+**Seed items** are five invented Magic: the Gathering card names. Each was checked against Scryfall's exact and fuzzy name lookup on 2026-10-06, and none matches a real card:
+
+| PK | Seed item | Colour / art motif |
+|---|---|---|
+| 1 | Emberwake Phoenix | red, flame |
+| 2 | Thornvault Sentinel | green, shield |
+| 3 | Gloomtide Archivist | blue, eye |
+| 4 | Sunforged Reliquary | white/gold, sun |
+| 5 | Cindermaw Tyrant | red/black, crown |
+
+Catalogue near-misses for these names include word-order collisions ("Phoenix of the Emberwake"), accessories ("Emberwake Phoenix Playmat"), same-named products from another product line, and an alternate printing ("Thornvault Sentinel (Showcase)"), which doubles as the ambiguous metadata term that resolves to needs-review.
+
+**Thumbnails** are tiny hand-templated SVG files, one per metadata entry. Each is a card-shaped rounded rectangle in the card's colour, a simple motif glyph, and the card name in text. A short script (`tracking/demo/make_thumbnails.py`) fills one SVG template string from `metadata.json` and writes `tracking/static/tracking/demo/<slug>.svg`. The generated files are committed, so there is no runtime generation and no image library. Scripts inside an SVG don't run when it is loaded through `<img>`, and the files are generated from our own data anyway.
 
 *Alternative considered:* replaying the captured fixtures in `tracking/fixtures/html/` verbatim. Rejected because they have no price variation, return nothing for visitor terms, and expose real vendor data.
 
@@ -141,7 +157,7 @@ In demo mode, `request_metadata_refresh` calls `drain_pending_metadata_fetch_req
   3. Load the seed manifest with explicit PKs and ensure the `demo` user exists.
   4. Generate history.
   5. Set `last_reset_at=now`.
-- **History generation** runs the real pipeline. For each simulated day `d` in the history window, it creates a `WebUpdate`, runs `fetch_one_unit` for every seed item-source with a `ReplayFetcher(clock=d)`, then backdates the `WebUpdate.timestamp` with `.update()` because of `auto_now_add`. This gives consistent FetchJobs, dedup counts, `ObservedCategoryValue` rows for bulk-edit suggestions, and visible relevance rejections, with no second writer of results to keep in sync.
+- **History generation** runs the real pipeline. For each simulated day `d` in the history window, it creates a `WebUpdate`, runs `fetch_one_unit` for every seed item-source with a `ReplayFetcher(clock=d)`, then backdates the `WebUpdate.timestamp` with `.update()` because of `auto_now_add`. The newest simulated run is stamped 5 minutes before the reset. Otherwise a visitor's first update straight after a reset would fall in the same drift-noise minute as that run and record every price as unchanged. This gives consistent FetchJobs, dedup counts, `ObservedCategoryValue` rows for bulk-edit suggestions, and visible relevance rejections, with no second writer of results to keep in sync.
   - Budget: 28 days × about 12 item-sources × small JSON comes to under ~2 s. A test asserts a time ceiling.
   - If the budget is missed, the fallback is to pre-generate the history rows once at boot and copy them in during resets.
 - **In-flight requests** can't collide with an in-request reset. Every in-flight request recorded activity no more than one write interval before it started, so a reset can only become due once all requests have been idle for at least `DEMO_RESET_IDLE_SECONDS`, and no request runs that long. The atomic transaction plus WAL protects concurrent *arrivals*, not long-running writers.
@@ -179,5 +195,4 @@ In demo mode, `request_metadata_refresh` calls `drain_pending_metadata_fetch_req
 
 ## Open Questions
 
-- **Seed content**: which concrete seed items, catalogue products, store names and thumbnail images to use. Thumbnails must be self-hosted and free of third-party art licensing issues. This is a content choice; it doesn't change the specs or tasks.
 - Final default values for the caps, to be tuned after watching real demo usage.

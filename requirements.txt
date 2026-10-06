@@ -12,3 +12,4 @@ redis==8.0.1
 psycopg[binary]==3.3.4
 coverage==7.15.0
 gunicorn==26.0.0
+whitenoise==6.12.0

@@ -1,0 +1,5 @@
+[
+  {"key": "dragonhoard", "name": "Dragon's Hoard Games", "parser_key": "shopify"},
+  {"key": "manavault", "name": "Mana Vault Collectibles", "parser_key": "storepass"},
+  {"key": "tidewater", "name": "Tidewater Cards & Comics", "parser_key": "wtfilters"}
+]

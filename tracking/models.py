@@ -937,3 +937,18 @@ class UpdateSchedule(models.Model):
             return False
 
         return True
+
+
+class DemoState(models.Model):
+    """Singleton (``pk=1``) bookkeeping for demo mode; unused outside ``DEMO_MODE``.
+
+    Read on every demo request to decide whether an idle-gated reset is due
+    (see ``tracking/demo/reset.py``). Never deleted by a demo reset.
+    """
+
+    last_reset_at = models.DateTimeField(null=True, blank=True)
+    last_activity_at = models.DateTimeField(null=True, blank=True)
+    last_update_started_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"DemoState(last_reset_at={self.last_reset_at})"

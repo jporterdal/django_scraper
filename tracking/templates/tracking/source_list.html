@@ -8,7 +8,7 @@
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h4 class="mb-0">All Sources</h4>
-            <a href="{% url 'add_source' %}" class="btn btn-success btn-sm">Add Source</a>
+            {% if not demo_mode %}<a href="{% url 'add_source' %}" class="btn btn-success btn-sm">Add Source</a>{% else %}<span class="text-muted small">Preset demo sources (read-only)</span>{% endif %}
         </div>
         <div class="card-body">
             {% if sources %}
@@ -40,8 +40,10 @@
                             <td><span class="text-muted">{{ source.base_search_url|truncatechars:50 }}</span></td>
                             <td>{{ source.item_count }}</td>
                             <td class="text-end">
+                                {% if not demo_mode %}
                                 <a href="{% url 'edit_source' source.pk %}" class="btn btn-primary btn-sm me-1">Edit</a>
                                 <a href="{% url 'delete_source' source.pk %}" class="btn btn-outline-danger btn-sm">Delete</a>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}

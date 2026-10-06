@@ -1,0 +1,249 @@
+[
+  {
+    "id": "dragonhoard-emberwake-phoenix-embers-of-aldoria",
+    "title": "Emberwake Phoenix",
+    "category": "Embers of Aldoria",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 4.5,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 3.82,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "dragonhoard-phoenix-of-the-emberwake-embers-of-aldoria",
+    "title": "Phoenix of the Emberwake",
+    "category": "Embers of Aldoria",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 0.6,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 0.51,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "dragonhoard-emberwake-phoenix-scorched-skies",
+    "title": "Emberwake Phoenix",
+    "category": "Scorched Skies",
+    "product_line": "Pokémon",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 3.2,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 2.72,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "dragonhoard-emberwake-phoenix-playmat-embers-of-aldoria",
+    "title": "Emberwake Phoenix Playmat",
+    "category": "Embers of Aldoria",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "",
+        "price": 19.99,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "dragonhoard-thornvault-sentinel-verdant-bastion",
+    "title": "Thornvault Sentinel",
+    "category": "Verdant Bastion",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 2.25,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 1.91,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "dragonhoard-thornvault-sentinel-showcase-verdant-bastion",
+    "title": "Thornvault Sentinel (Showcase)",
+    "category": "Verdant Bastion",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 7.8,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 6.63,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "dragonhoard-gloomtide-archivist-tidebound-depths",
+    "title": "Gloomtide Archivist",
+    "category": "Tidebound Depths",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 12.4,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 10.54,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "dragonhoard-sunforged-reliquary-dawnforge",
+    "title": "Sunforged Reliquary",
+    "category": "Dawnforge",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 18.95,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 16.11,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "dragonhoard-sunforged-reliquary-timeless-relics",
+    "title": "Sunforged Reliquary",
+    "category": "Timeless Relics",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 9.5,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 8.07,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "dragonhoard-cindermaw-tyrant-embers-of-aldoria",
+    "title": "Cindermaw Tyrant",
+    "category": "Embers of Aldoria",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 24.99,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 21.24,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "dragonhoard-cindermaw-tyrant-foil-embers-of-aldoria",
+    "title": "Cindermaw Tyrant (Foil)",
+    "category": "Embers of Aldoria",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 61.5,
+        "instock": false
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 52.27,
+        "instock": false
+      }
+    ]
+  },
+  {
+    "id": "dragonhoard-vexing-starfall-tidebound-depths",
+    "title": "Vexing Starfall",
+    "category": "Tidebound Depths",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 1.75,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 1.49,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "dragonhoard-starfall-herald-tidebound-depths",
+    "title": "Starfall Herald",
+    "category": "Tidebound Depths",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 0.45,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 0.38,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "dragonhoard-hollowbrook-seer-verdant-bastion",
+    "title": "Hollowbrook Seer",
+    "category": "Verdant Bastion",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 1.1,
+        "instock": false
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 0.94,
+        "instock": true
+      }
+    ]
+  }
+]

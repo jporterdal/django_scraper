@@ -32,5 +32,5 @@ None. The behaviors that differ in demo mode (inline metadata draining, preset-o
   - New demo middleware for the user, allowlist and reset; pattern validation in `tracking/forms.py`; seed-protection checks in the item, item-source, tag, metadata and bulk-edit views.
   - New management commands to seed and reset the demo, a small singleton demo-state model with a migration, and template changes for the banner, read-only pages and hidden controls.
 - **Data**: a bundled demo dataset (catalogues per demo source, a seed manifest, metadata payloads and local images).
-- **Dependencies**: `whitenoise`, used only in demo mode to serve static files from the single web process.
-- **Deployment**: a demo deployment is one web service (gunicorn) with no Redis, Postgres, Huey worker or nginx. Start command: `migrate && demo_reset && gunicorn`. A new section is added to `docs/deployment_steps.md`.
+- **Dependencies**: `whitenoise`, used only in demo mode so gunicorn can serve static files to the separate nginx proxy service, which can't read the web container's disk.
+- **Deployment**: a demo deployment is one web service (gunicorn) behind the existing nginx proxy, with no Redis, Postgres or Huey worker. Start command: `migrate && demo_reset && gunicorn`. A new section is added to `docs/deployment_steps.md`.

@@ -81,8 +81,10 @@ While demo mode is enabled, the system SHALL perform a reset at the start of the
 
 That request SHALL be served from the freshly reset data. `DEMO_RESET_IDLE_SECONDS` and `DEMO_RESET_MIN_INTERVAL_SECONDS` SHALL be demo-specific Django settings. Each SHALL default to 3600 seconds and be overridable by an environment variable of the same name, and neither SHALL have any effect when demo mode is off. When several requests arrive at once while a reset is due, exactly one reset SHALL be performed.
 
+Activity SHALL be recorded at least once per `DEMO_ACTIVITY_WRITE_INTERVAL_SECONDS` (a demo-specific setting, default 60), so that the server doesn't write on every request. A reset SHALL therefore become eligible no later than that interval after the idle threshold is reached. A reset SHALL never occur while any request has been handled within the last `DEMO_RESET_IDLE_SECONDS`.
+
 #### Scenario: Reset after an idle hour
-- **WHEN** the last request was handled more than `DEMO_RESET_IDLE_SECONDS` ago, the last reset was more than `DEMO_RESET_MIN_INTERVAL_SECONDS` ago, and a visitor arrives
+- **WHEN** the last request was handled more than `DEMO_RESET_IDLE_SECONDS` plus `DEMO_ACTIVITY_WRITE_INTERVAL_SECONDS` ago, the last reset was more than `DEMO_RESET_MIN_INTERVAL_SECONDS` ago, and a visitor arrives
 - **THEN** that visitor's first page is served from freshly reset seed data
 
 #### Scenario: Active visitor is not reset
@@ -99,4 +101,4 @@ That request SHALL be served from the freshly reset data. `DEMO_RESET_IDLE_SECON
 
 #### Scenario: Settings override defaults
 - **WHEN** the deployment sets `DEMO_RESET_IDLE_SECONDS=600` and `DEMO_RESET_MIN_INTERVAL_SECONDS=1800`
-- **THEN** reset eligibility uses a 10-minute idle threshold and a 30-minute minimum interval
+- **THEN** reset eligibility uses a 10-minute idle threshold (plus the activity write interval) and a 30-minute minimum interval

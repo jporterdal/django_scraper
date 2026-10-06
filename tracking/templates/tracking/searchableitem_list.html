@@ -1,4 +1,5 @@
 {% extends "tracking/base.html" %}
+{% load demo_tags %}
 
 {% block title %}Pricing Data{% endblock %}
 
@@ -149,7 +150,7 @@
                                 <td>
                                     <a href="{% url 'item_detail' item.pk %}" class="btn btn-info btn-sm me-2">View History</a>
                                     <a href="{% url 'item_sources' item.pk %}" class="btn btn-outline-secondary btn-sm me-2">Sources</a>
-                                    <a href="{% url 'edit_term' item.pk %}" class="btn btn-primary btn-sm">Edit</a>
+                                    {% if not item|demo_protected %}<a href="{% url 'edit_term' item.pk %}" class="btn btn-primary btn-sm">Edit</a>{% endif %}
                                 </td>
                             </tr>
                             {% empty %}
