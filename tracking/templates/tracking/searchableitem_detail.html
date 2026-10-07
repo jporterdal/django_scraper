@@ -234,6 +234,7 @@
             }
             const pointStyles = series.point_styles || [];
             const pointBackgroundColors = pointStyles.map(function (style) {
+                // 'gap' entries have a null price (line break) and no visible point.
                 return style === 'hollow' ? hollowFill : 'rgba(52, 152, 219, 1)';
             });
             const pointBorderColors = pointStyles.map(function () {
@@ -242,8 +243,8 @@
             const pointBorderWidths = pointStyles.map(function (style) {
                 return style === 'hollow' ? 2 : 1;
             });
-            const pointRadii = pointStyles.map(function () {
-                return 4;
+            const pointRadii = pointStyles.map(function (style) {
+                return style === 'gap' ? 0 : 4;
             });
             new Chart(canvas.getContext('2d'), {
                 type: 'line',
