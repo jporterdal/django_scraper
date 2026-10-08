@@ -136,11 +136,13 @@ To move existing SQLite data: `dumpdata` on SQLite (with `DATABASE_URL` unset), 
 
 ## Production deployment
 
-The app is intended to run behind a reverse proxy that terminates TLS. Django serves the app via a WSGI server; the proxy handles HTTPS and static files.
+The app is intended to run behind a reverse proxy that terminates TLS. Django serves the app via a WSGI server and serves its own collected static files (WhiteNoise); the proxy handles HTTPS.
+
+The live deployment runs on Railway from the two Dockerfiles in this repo (`Dockerfile` for the app, `nginx/Dockerfile` for the proxy). See `docs/deployment_steps.md` for the services, settings and runbook. The rest of this section describes a generic, non-Docker host.
 
 ### Architecture
 
-1. **Reverse proxy** (nginx or Caddy) — terminates TLS (e.g. Let's Encrypt), serves collected static files from `staticfiles/`, and `proxy_pass`es dynamic requests to the WSGI server. Set `X-Forwarded-Proto: https` so Django detects HTTPS when `SECURE_DEPLOYMENT=True`.
+1. **Reverse proxy** (nginx or Caddy) — terminates TLS (e.g. Let's Encrypt) and `proxy_pass`es all requests, including `/static/`, to the WSGI server. Set `X-Forwarded-Proto: https` so Django detects HTTPS when `SECURE_DEPLOYMENT=True`.
 2. **WSGI server** — run gunicorn or uvicorn against `django_scraper.wsgi:application`, e.g. `gunicorn django_scraper.wsgi:application --bind 127.0.0.1:8000`.
 3. **Huey worker** — a separate process running `python manage.py run_huey` with Redis (`REDIS_URL`). The web process alone does not dispatch scheduled scrapes. See `docs/scheduling.md` for schedule behaviour.
 4. **PostgreSQL** — set `DATABASE_URL` to a Postgres connection string. See `docs/postgres_migration.md` for migration from SQLite.
@@ -173,7 +175,7 @@ Never commit `.env` or reuse a dev key in production.
 source venv/bin/activate
 pip install -r requirements.txt
 python manage.py migrate
-python manage.py collectstatic --noinput   # writes to staticfiles/; proxy serves these
+python manage.py collectstatic --noinput   # writes to staticfiles/; the app serves these
 python manage.py createsuperuser           # first deploy only
 python manage.py check --deploy            # run with SECURE_DEPLOYMENT=True in .env
 ```
@@ -188,8 +190,7 @@ python manage.py run_huey                  # separate terminal/service; requires
 Configure nginx/Caddy to:
 
 - Redirect HTTP → HTTPS
-- Serve `/static/` from `staticfiles/` (or your `STATIC_ROOT` path)
-- Proxy other requests to the WSGI bind address with `X-Forwarded-Proto: https`
+- Proxy all requests, including `/static/`, to the WSGI bind address with `X-Forwarded-Proto: https` (the proxy can still cache static responses)
 
 Local dev and tests keep `SECURE_DEPLOYMENT=False` (default) so the test client and `runserver` are unaffected.
 
@@ -199,7 +200,7 @@ Setting `DEMO_MODE=True` turns a deployment into a public, no-login demo suitabl
 
 What demo mode does:
 
-- **Forces the settings a public demo needs**: `DEBUG` off, inline background tasks, `REDIS_URL` ignored, `DATABASE_URL` ignored in favour of `DEMO_DATABASE_PATH` (SQLite in WAL mode), zero scrape delay, signed-cookie sessions, a 64 KiB request-size limit, and WhiteNoise for static files. `SECRET_KEY`, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` and `SECURE_DEPLOYMENT` are still required, as usual.
+- **Forces the settings a public demo needs**: `DEBUG` off, inline background tasks, `REDIS_URL` ignored, `DATABASE_URL` ignored in favour of `DEMO_DATABASE_PATH` (SQLite in WAL mode), zero scrape delay, signed-cookie sessions, and a 64 KiB request-size limit. `SECRET_KEY`, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` and `SECURE_DEPLOYMENT` are still required, as usual.
 - **No login**: every request runs as a fixed, non-staff `demo` user. `/admin/` and `/accounts/` return 404.
 - **No outbound HTTP**: searches are served by `tracking/demo/replay.py` from local catalogues (`tracking/demo/data/`), rendered in each demo source's real vendor JSON shape and parsed by the real parsers. Metadata comes from a local-file provider. Building the real `Fetcher` raises, and a socket guard blocks any non-loopback connection.
 - **Writes are denied by default**: only the URL names in `DEMO_ALLOWED_WRITE_URL_NAMES` (`tracking/demo/middleware.py`) accept POSTs. Sources and Schedules are preset and read-only, `pinned_url`/`url_suffix` can't be set, and title patterns can only be picked from `tracking/demo/data/patterns.json`.

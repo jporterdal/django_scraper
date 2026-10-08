@@ -1,0 +1,26 @@
+# Secrets and local data: configuration comes from Railway variables.
+.env
+db.sqlite3*
+demo.sqlite3*
+*.log
+.coverage
+bugdata.csv
+website_logo.png
+
+# Local environments, build output and caches
+venv/
+node_modules/
+staticfiles/
+**/__pycache__/
+
+# Version control, planning and tooling
+.git/
+planning/
+logs/
+openspec/
+.claude/
+.cursor/
+*.code-workspace
+
+# The nginx proxy is a separate service built from nginx/
+nginx/

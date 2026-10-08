@@ -1,19 +1,29 @@
 # Deployment steps
-Examples will assume Railway but instructions should ideally be given to work generically on any similar host.
+The live deployment runs on Railway, built from the Dockerfiles in this repo. The images are ordinary Docker images, so the same setup works on any host that runs containers, private networking aside.
 
-## Link Github repo + Procfile
-Link Github repo for optional automatic deployment from PR.
-
-Procfile is optional but Railway dashboard is "preferred" for adding custom start command (see `gunicorn` below). Binding to 8000 is necessary since Railway (or gunicorn on Railway) default seems to be to bind to 8080.
+## Services
+One Railway project, one repo:
 
 ```
-python manage.py migrate && gunicorn --bind 0.0.0.0:8000 django_scraper.wsgi --error-logfile - --access-logfile -
-python manage.py migrate && python manage.py run_huey
+public domain ──▶ nginx ──▶ djangoscraper.railway.internal:8000 (web) ──▶ Postgres
+                                                                    └───▶ Redis ◀── worker
 ```
 
+| Service | Source | Builds from | Start command | Public domain |
+|---------|--------|-------------|---------------|---------------|
+| nginx | this repo, Root Directory `nginx/`, watch path `/nginx/**` | `nginx/Dockerfile` | none (image default) | yes |
+| web (`djangoscraper`) | this repo | root `Dockerfile` | **none** (image default: `migrate`, then gunicorn on 8000) | no |
+| worker | this repo | root `Dockerfile` | `python manage.py run_huey` | no |
+| Postgres, Redis | Railway databases | — | — | no |
 
-## Update .ENV variables
-Either editing `.env` raw or through web interface, these keys need valid values:
+- **The web service name matters.** nginx proxies to `djangoscraper.railway.internal:8000` (`nginx/nginx.conf`), so renaming the web service breaks the proxy.
+- **The port is fixed at 8000.** The web image ignores Railway's `PORT` variable.
+- **Start commands run in exec form.** With a Dockerfile build, a dashboard start command replaces the image's command and runs without a shell, so `&&` and `$VARS` don't work in it. Leave the web start command empty. If you need more than one command, wrap them: `/bin/sh -c "first && exec second"`.
+- **Static files** are collected at build time and served by gunicorn (WhiteNoise). nginx proxies `/static/` like any other path.
+- **Migrations** run when the web service boots. The worker doesn't run them, so the two can't race each other.
+
+## Environment variables
+Set these in Railway on **both** the web and worker services:
 ```
 DEBUG="False"
 CSRF_COOKIE_SECURE="True"
@@ -29,71 +39,49 @@ REDIS_URL="${{Redis.REDIS_URL}}"
 SESSION_COOKIE_SECURE="True"
 ```
 
-Ensure that `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` both use valid URLs if given by Railway. Ensure that the same ENV variables are avaialble to **both** `web` and `worker` services, responsible for `gunicorn` and `run_huey` processes, respectively.
+Make sure `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` use the public (nginx) domain. Never put a `.env` file in the image: `.dockerignore` excludes it, and every setting comes from Railway variables.
 
+## Build and test locally
+```
+docker build -t django-scraper .
+docker run --rm -p 8000:8000 -e DEBUG=False -e SECRET_KEY=x -e ALLOWED_HOSTS=localhost \
+    -e DATABASE_URL=sqlite:////data/smoke.sqlite3 django-scraper
+```
+Then check that `curl -I localhost:8000/accounts/login/` and `curl -I localhost:8000/static/admin/css/base.css` both return 200. Keep SQLite in `/data`: the app runs as a non-root user and can't write anywhere else.
 
-## Redis
-Install and start redis
-```
-sudo apt install redis-server
-sudo systemctl status redis-server
-sudo systemctl start redis-server
-```
+Worker from the same image: `docker run --rm ... django-scraper python manage.py run_huey`.
 
-## Postgres
-Install and start postgresql
-```
-sudo apt install postgresql libpq-dev
-sudo systemctl status postgresql
-sudo systemctl start postgresql
-```
+nginx: `docker build nginx/`.
 
-## Huey
-Run Huey as separate process
-```
-python manage.py run_huey
-```
+## Cutover from the old setup (one-time)
+Before this change, web and worker were built by Railway's Python builder with dashboard start commands, and nginx was built from the separate `ds-nginx` repo. Downtime is acceptable. Postgres and Redis are never modified.
+
+1. **Back up.** Take a Postgres backup in Railway (or `pg_dump "$DATABASE_URL" > backup.sql`). Note the current deployment IDs of web, worker and nginx so you can roll back.
+2. **Pre-checks.** `python manage.py makemigrations --check` should report no changes. Note whether `/static/admin/css/base.css` loads on the public domain today.
+3. **Cut over web and worker.** Merge to the deployed branch. On the **web** service, make sure the builder is Dockerfile and **clear the start command**. On the **worker**, set the start command to `python manage.py run_huey`. Deploy both.
+   - Web logs: "No migrations to apply.", then gunicorn listening at `0.0.0.0:8000`.
+   - Worker logs: "Huey consumer started".
+4. **Verify** through the public domain (nginx still on `ds-nginx`): login works, the item list loads, admin pages are styled, and a manual "Update Selected" run completes.
+5. **Cut over nginx.** In the nginx service, change the source repo from `ds-nginx` to this repo, set Root Directory `nginx/` and watch path `/nginx/**`, and deploy. Repeat the checks from step 4.
+6. **Clean up.** Once it has been stable for a while, archive the `ds-nginx` repo on GitHub.
+
+If nginx returns 502 after step 3, check that the web service is still named `djangoscraper` and is listening on 8000. If both are fine, the private network may be IPv6-only. Then set the web start command to `/bin/sh -c "python manage.py migrate --noinput && exec gunicorn --bind [::]:8000 --no-control-socket django_scraper.wsgi --error-logfile - --access-logfile -"`.
+
+## Rollback
+The database isn't modified, so a rollback restores the previous state exactly:
+- In Railway, redeploy the service's previous deployment. If you are going back to the pre-Docker build, also restore the old start commands: `python manage.py migrate && gunicorn --bind 0.0.0.0:8000 django_scraper.wsgi --error-logfile - --access-logfile -` (web) and `python manage.py migrate && python manage.py run_huey` (worker).
+- Or revert the commit and redeploy.
+- nginx: point the service back at the `ds-nginx` repo (until it's archived).
 
 ## Create superuser
-Create user for login, assign as superuser in Django
+Use the Railway CLI (https://docs.railway.com/cli) to open a shell on the web service and run:
 ```
 python manage.py createsuperuser
 ```
-
-## Web server
-Install and set up nginx:
-```
-sudo apt install nginx
-```
-
-Can (should?) also use the Dockerfile repo which is set up to work with Railway:
-```
-git clone https://github.com/jporterdal/ds-nginx.git
-```
-
-Point `nginx` to gunicorn via Railway's internal address.
-
-
-## WSGI server
-Ensure gunicorn is in `requirements.txt` and run WSGI project with:
-```
-gunicorn django_scraper.wsgi --error-logfile - --access-logfile -
-```
-This should be entered as custom start-up command in Railway dashboard **or** Procfile.
-
-
-## Railway CLI
-It will likely be necessary to install Railway CLI in order to run createsuperuser:
-https://docs.railway.com/cli
-
-It may be necessary to rename all the instances of `sh` in the downloaded scripts to `bash` in order to avoid "bad substitution" errors when trying to run.
-
-Can then run an SSH command to connect and run the necessary shell commands on the Railway container:
-https://station.railway.com/questions/how-do-you-create-a-superuser-for-django-28a85dea
-
+Use `railway ssh` (see https://station.railway.com/questions/how-do-you-create-a-superuser-for-django-28a85dea). You may need to rename `sh` to `bash` in the downloaded install scripts to avoid "bad substitution" errors.
 
 ## Demo deployment
-A public demo (see "Demo mode" in `README.md`) is a **separate** deployment from the real one: its own service, its own data, and a single extra variable. It needs only the web service behind the nginx proxy. Don't add Postgres, Redis or a Huey worker.
+A public demo (see "Demo mode" in `README.md`) is a **separate** deployment from the real one: its own web service built from the same root `Dockerfile`, behind its own nginx, with its own data. Don't add Postgres, Redis or a worker.
 
 Set these variables on the demo web service:
 ```
@@ -104,16 +92,14 @@ CSRF_TRUSTED_ORIGINS=https://some_demo_url_here
 SECURE_DEPLOYMENT="True"
 ```
 
-`DEBUG`, `DATABASE_URL`, `REDIS_URL`, `HUEY_IMMEDIATE` and the scrape delay settings are forced or ignored by demo mode, so leave them unset. The optional `DEMO_*` settings in `README.md` tune reset timing and visitor caps.
+`DEBUG`, `DATABASE_URL`, `REDIS_URL`, `HUEY_IMMEDIATE` and the scrape delay settings are forced or ignored by demo mode, so leave them unset. The optional `DEMO_*` settings in `README.md` tune reset timing and visitor caps. The image already sets `DEMO_DATABASE_PATH=/data/demo.sqlite3`, the only writable location.
 
-Start command (Railway dashboard or Procfile):
+Start command:
 ```
-python manage.py migrate && python manage.py collectstatic --noinput && python manage.py demo_reset && gunicorn --bind 0.0.0.0:8000 django_scraper.wsgi --error-logfile - --access-logfile -
+/bin/sh -c "python manage.py migrate && python manage.py demo_reset && exec gunicorn --bind 0.0.0.0:8000 --no-control-socket django_scraper.wsgi --error-logfile - --access-logfile -"
 ```
 
-`demo_reset` restores the seed data on every boot, and refuses to run unless `DEMO_MODE` is on, so it can't wipe a real deployment. The demo database is a SQLite file on the container's own disk, and a restart or redeploy starts it fresh.
-
-nginx: proxy `/static/` to gunicorn like every other path. nginx runs as a separate service and can't read the web container's `staticfiles/` directory, so in demo mode gunicorn serves static files itself (WhiteNoise). nginx can still cache them.
+`demo_reset` restores the seed data on every boot, and refuses to run unless `DEMO_MODE` is on, so it can't wipe a real deployment. The demo database lives on the container's own disk, so a restart or redeploy starts it fresh.
 
 No `createsuperuser` step: the demo has no admin and no login.
 

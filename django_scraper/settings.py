@@ -53,6 +53,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # nginx runs as a separate service and can't read this container's
+    # staticfiles/, so gunicorn serves them (nginx can still cache).
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -242,12 +245,6 @@ LOGGING = {
             "class": "logging.StreamHandler",
             "formatter": "verbose",
         },
-        'file': {
-            'level': 'DEBUG',
-            'class': 'logging.FileHandler',
-            'filename': os.path.join(BASE_DIR, 'django_debug.log'),
-            'formatter': 'verbose',
-        },
     },
     "loggers": {
         "tracking": {
@@ -258,7 +255,16 @@ LOGGING = {
     },
 }
 
+# The file handler is only defined in debug: dictConfig opens every defined
+# handler's file at startup, which fails in a container whose app directory
+# isn't writable.
 if DEBUG:
+    LOGGING["handlers"]["file"] = {
+        "level": "DEBUG",
+        "class": "logging.FileHandler",
+        "filename": os.path.join(BASE_DIR, "django_debug.log"),
+        "formatter": "verbose",
+    }
     LOGGING["loggers"]["tracking"]["handlers"].append("file")
     LOGGING["loggers"]["tracking"]["level"] = "DEBUG"
 
@@ -325,10 +331,3 @@ if DEMO_MODE:
     # Bound every request body, which bounds every free-text field at once.
     DATA_UPLOAD_MAX_MEMORY_SIZE = 64 * 1024
     DATA_UPLOAD_MAX_NUMBER_FIELDS = 1000
-
-    # nginx runs as a separate service and can't read this container's
-    # staticfiles/, so gunicorn serves them (nginx can still cache).
-    MIDDLEWARE.insert(
-        MIDDLEWARE.index("django.middleware.security.SecurityMiddleware") + 1,
-        "whitenoise.middleware.WhiteNoiseMiddleware",
-    )
