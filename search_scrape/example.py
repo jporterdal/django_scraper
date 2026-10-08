@@ -43,7 +43,7 @@ class CCSearchParser(SearchParser):
 
     def read_price(self, data):
         try:
-            self.price = float(re.match(".*\$([0-9\.\,]+)$", data.strip())[1].replace(",", ""))
+            self.price = float(re.match(r".*\$([0-9\.\,]+)$", data.strip())[1].replace(",", ""))
         except TypeError:  # no match!
             # TODO: refactor this to handle price data being within an element containing other elements
             logger.error("Could not find price in element data!")
@@ -56,7 +56,7 @@ class CCSearchParser(SearchParser):
 
 
     def read_instock(self, data):
-        pattern = ".*?(\S.*\S).*?"
+        pattern = r".*?(\S.*\S).*?"
         m = re.match(pattern, data, re.DOTALL)  # Instruct re to include endlines in [.]
         try:
             self.instock = m[1].lower() == "In Store - Available for Pickup".lower()
