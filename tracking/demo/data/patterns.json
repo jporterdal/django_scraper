@@ -1,0 +1,8 @@
+[
+  {"pattern": "\\(Near Mint\\)", "label": "Near Mint condition only"},
+  {"pattern": "\\(Lightly Played\\)", "label": "Lightly Played condition"},
+  {"pattern": "Foil", "label": "Foil printings"},
+  {"pattern": "Showcase", "label": "Showcase printings"},
+  {"pattern": "Token", "label": "Tokens"},
+  {"pattern": "Playmat|Sleeves|Deck Box", "label": "Accessories (playmats, sleeves, deck boxes)"}
+]

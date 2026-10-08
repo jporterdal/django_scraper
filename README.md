@@ -192,3 +192,41 @@ Configure nginx/Caddy to:
 - Proxy other requests to the WSGI bind address with `X-Forwarded-Proto: https`
 
 Local dev and tests keep `SECURE_DEPLOYMENT=False` (default) so the test client and `runserver` are unaffected.
+
+## Demo mode
+
+Setting `DEMO_MODE=True` turns a deployment into a public, no-login demo suitable for linking from a CV or portfolio. It needs one web process and a local SQLite file: no Redis, no Postgres, no Huey worker, and no outbound network traffic. With `DEMO_MODE` unset (the default), nothing below applies.
+
+What demo mode does:
+
+- **Forces the settings a public demo needs**: `DEBUG` off, inline background tasks, `REDIS_URL` ignored, `DATABASE_URL` ignored in favour of `DEMO_DATABASE_PATH` (SQLite in WAL mode), zero scrape delay, signed-cookie sessions, a 64 KiB request-size limit, and WhiteNoise for static files. `SECRET_KEY`, `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` and `SECURE_DEPLOYMENT` are still required, as usual.
+- **No login**: every request runs as a fixed, non-staff `demo` user. `/admin/` and `/accounts/` return 404.
+- **No outbound HTTP**: searches are served by `tracking/demo/replay.py` from local catalogues (`tracking/demo/data/`), rendered in each demo source's real vendor JSON shape and parsed by the real parsers. Metadata comes from a local-file provider. Building the real `Fetcher` raises, and a socket guard blocks any non-loopback connection.
+- **Writes are denied by default**: only the URL names in `DEMO_ALLOWED_WRITE_URL_NAMES` (`tracking/demo/middleware.py`) accept POSTs. Sources and Schedules are preset and read-only, `pinned_url`/`url_suffix` can't be set, and title patterns can only be picked from `tracking/demo/data/patterns.json`.
+- **Protected seed data**: five invented cards (fixed PKs in `tracking/demo/data/seed.json`) and their tags can't be edited or deleted. Visitors can still run price updates on them and create their own items alongside them.
+- **Automatic reset**: the sandbox is restored to the seed state on boot (`python manage.py demo_reset`) and on the first request after the demo has been idle for at least `DEMO_RESET_IDLE_SECONDS` *and* at least `DEMO_RESET_MIN_INTERVAL_SECONDS` have passed since the last reset. Seed price history is regenerated to end at the moment of the reset.
+
+Demo-only settings (each also readable from an environment variable of the same name; ignored unless `DEMO_MODE` is true):
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `DEMO_RESET_IDLE_SECONDS` | `3600` | Idle time required before a reset |
+| `DEMO_RESET_MIN_INTERVAL_SECONDS` | `3600` | Minimum time between resets |
+| `DEMO_ACTIVITY_WRITE_INTERVAL_SECONDS` | `60` | Activity is recorded at most this often, so a reset can lag the idle threshold by up to this much |
+| `DEMO_SEED_HISTORY_DAYS` | `28` | Days of simulated daily price history for seed items |
+| `DEMO_MAX_VISITOR_ITEMS` | `25` | Items visitors can create in total |
+| `DEMO_MAX_VISITOR_TAGS` | `10` | Tags visitors can create in total |
+| `DEMO_BULK_ADD_MAX_TERMS` | `10` | Bulk-add terms per submission |
+| `DEMO_UPDATE_MIN_INTERVAL_SECONDS` | `30` | Minimum time between price update runs, demo-wide |
+| `DEMO_MAX_SEARCH_RESULTS` | `20000` | Stored results at which updates pause until the next reset |
+| `DEMO_DATABASE_PATH` | `BASE_DIR/demo.sqlite3` | SQLite file used in demo mode |
+
+Run it locally:
+
+```bash
+DEMO_MODE=True SECRET_KEY=dev-only ALLOWED_HOSTS=localhost \
+  sh -c "python manage.py migrate && python manage.py collectstatic --noinput && python manage.py demo_reset && gunicorn --bind 127.0.0.1:8000 django_scraper.wsgi"
+```
+
+To change the demo cards, edit `tracking/demo/data/` (`seed.json`, `metadata.json`, `catalogue/*.json`), then regenerate the card images with `python tracking/demo/make_thumbnails.py`. The generated SVGs are committed. See `docs/deployment_steps.md` for deploying the demo.
+

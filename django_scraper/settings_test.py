@@ -10,7 +10,16 @@ Coverage workflow:
     coverage report -m
 """
 
-from .settings import *  # noqa: F401,F403
+import os
+
+# Evaluate the base settings in normal (non-demo) mode even if the shell or
+# .env sets DEMO_MODE; demo tests opt in with override_settings(DEMO_MODE=True).
+# (django-environ's read_env never overrides an existing environment variable.)
+os.environ["DEMO_MODE"] = "False"
+
+from .settings import *  # noqa: F401,F403,E402
+
+DEMO_MODE = False
 
 DEBUG = False
 

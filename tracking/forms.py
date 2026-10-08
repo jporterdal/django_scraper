@@ -3,12 +3,16 @@ import re
 from collections import defaultdict
 
 from django import forms
+from django.conf import settings
 from django.db import transaction
 from django.db.models.functions import Lower
 from django.forms import BaseFormSet, formset_factory
 
+from .demo import dataset as demo_dataset
+from .demo import is_demo
+from .demo.protection import is_protected
 from .metadata import request_metadata_refresh, sync_metadata_after_save
-from .metadata_providers import PROVIDERS as metadata_provider_registry
+from .metadata_providers import get_metadata_providers
 from .models import (
     ItemSource,
     SearchableItem,
@@ -171,6 +175,15 @@ def _validate_regex_patterns(patterns):
     Decision 10) so both surface the same error wording without duplicating
     the check.
     """
+    if is_demo():
+        # Demo mode accepts only the preset patterns: no visitor-authored
+        # regex ever reaches re.search (demo-mode spec).
+        preset = set(demo_dataset.preset_pattern_values())
+        for pattern in patterns:
+            if pattern not in preset:
+                raise forms.ValidationError(
+                    f"Only the demo's preset patterns can be used; {pattern!r} isn't one of them."
+                )
     for pattern in patterns:
         try:
             re.compile(pattern)
@@ -178,6 +191,10 @@ def _validate_regex_patterns(patterns):
             raise forms.ValidationError(
                 f"Invalid regex pattern {pattern!r}: {exc}"
             )
+
+
+def _demo_pattern_choices():
+    return [(pattern, f"{label} ({pattern})") for pattern, label in demo_dataset.preset_patterns()]
 
 
 def _apply_bootstrap_form_classes(form):
@@ -343,7 +360,7 @@ class SearchableItemForm(forms.ModelForm):
 
         self.fields["metadata_provider_key"].choices = [
             ("", "None"),
-            *((key, key) for key in metadata_provider_registry),
+            *((key, key) for key in get_metadata_providers()),
         ]
 
         instance = getattr(self, "instance", None)
@@ -428,12 +445,14 @@ class ItemSourceForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if is_demo():
+            self._use_demo_fields()
         _apply_bootstrap_form_classes(self)
 
         # ModelForm pre-populates self.initial from the instance with the raw
         # JSON lists; convert those to newline-joined text for the textareas.
         instance = getattr(self, "instance", None)
-        if instance is not None and instance.pk:
+        if instance is not None and instance.pk and not is_demo():
             self.initial["title_include_patterns"] = _list_to_lines(
                 instance.title_include_patterns
             )
@@ -441,10 +460,36 @@ class ItemSourceForm(forms.ModelForm):
                 instance.title_exclude_patterns
             )
 
+    def _use_demo_fields(self):
+        """Demo mode: no URL overrides, and patterns picked from the presets only."""
+        del self.fields["url_suffix"]
+        del self.fields["pinned_url"]
+        for name, label in (
+            ("title_include_patterns", "Include patterns"),
+            ("title_exclude_patterns", "Exclude patterns"),
+        ):
+            self.fields[name] = forms.MultipleChoiceField(
+                choices=_demo_pattern_choices(),
+                required=False,
+                widget=forms.CheckboxSelectMultiple,
+                label=label,
+                help_text="The demo offers a fixed set of preset patterns.",
+            )
+
     def _clean_patterns(self, field_name):
-        patterns = _lines_to_list(self.cleaned_data.get(field_name))
+        value = self.cleaned_data.get(field_name)
+        if isinstance(value, (list, tuple)):
+            patterns = list(value)
+        else:
+            patterns = _lines_to_list(value)
         _validate_regex_patterns(patterns)
         return patterns
+
+    def save(self, commit=True):
+        if is_demo():
+            self.instance.url_suffix = ""
+            self.instance.pinned_url = ""
+        return super().save(commit=commit)
 
     def clean_title_include_patterns(self):
         return self._clean_patterns("title_include_patterns")
@@ -624,9 +669,21 @@ class BulkAddItemsForm(forms.Form):
         self.fields["tag"].choices = tag_choices
         self.fields["metadata_provider_key"].choices = [
             ("", "None"),
-            *((key, key) for key in metadata_provider_registry),
+            *((key, key) for key in get_metadata_providers()),
         ]
+        max_terms = self.max_terms()
+        if max_terms != BULK_ADD_MAX_TERMS:
+            self.fields["search_terms"].help_text = (
+                f"One search term per line. Maximum {max_terms} terms in the demo."
+            )
+            self.fields["search_terms"].widget.attrs["title"] = (
+                f"Maximum {max_terms} search terms per submission"
+            )
         _apply_bootstrap_form_classes(self)
+
+    @staticmethod
+    def max_terms():
+        return settings.DEMO_BULK_ADD_MAX_TERMS if is_demo() else BULK_ADD_MAX_TERMS
 
     def clean_tag(self):
         value = self.cleaned_data["tag"]
@@ -642,9 +699,10 @@ class BulkAddItemsForm(forms.Form):
         terms = [line.strip() for line in raw.splitlines() if line.strip()]
         if not terms:
             raise forms.ValidationError("Enter at least one search term.")
-        if len(terms) > BULK_ADD_MAX_TERMS:
+        max_terms = self.max_terms()
+        if len(terms) > max_terms:
             raise forms.ValidationError(
-                f"At most {BULK_ADD_MAX_TERMS} search terms are allowed."
+                f"At most {max_terms} search terms are allowed."
             )
         for term in terms:
             if len(term) > BULK_ADD_TERM_MAX_LENGTH:
@@ -748,8 +806,8 @@ def create_items_from_bulk_add(terms, tag, priority, source_forms, metadata_prov
                 ItemSource.objects.create(
                     item=item,
                     source=source,
-                    url_suffix=data.get("url_suffix") or "",
-                    pinned_url=data.get("pinned_url") or "",
+                    url_suffix="" if is_demo() else data.get("url_suffix") or "",
+                    pinned_url="" if is_demo() else data.get("pinned_url") or "",
                     title_include_patterns=data.get("title_include_patterns") or [],
                     title_exclude_patterns=data.get("title_exclude_patterns") or [],
                 )
@@ -820,7 +878,7 @@ class BulkEditItemsForm(forms.Form):
         self.fields["metadata_provider_key"].choices = [
             (BULK_EDIT_LEAVE, "Leave unchanged"),
             (BULK_EDIT_CLEAR, "Clear (no provider)"),
-            *((key, key) for key in metadata_provider_registry),
+            *((key, key) for key in get_metadata_providers()),
         ]
         self.initial.setdefault("priority", BULK_EDIT_LEAVE)
         self.initial.setdefault("active", BULK_EDIT_LEAVE)
@@ -924,8 +982,17 @@ class BulkEditItemsForm(forms.Form):
         (Source, field) since patterns have no suggestion-fallback source.
         """
         groups = []
+        demo = is_demo()
+        presets = demo_dataset.preset_pattern_values() if demo else ()
         for group in source_pattern_groups_for_items(self.item_ids):
             source_key = group["source"].pk
+            if demo:
+                # Offer every preset as a row, even ones no selected item has yet.
+                for key in ("include_patterns", "exclude_patterns"):
+                    present = {pattern for pattern, _count in group[key]}
+                    group[key] = list(group[key]) + [
+                        (pattern, 0) for pattern in presets if pattern not in present
+                    ]
 
             include_rows = []
             for pattern, count in group["include_patterns"]:
@@ -950,6 +1017,17 @@ class BulkEditItemsForm(forms.Form):
                 row["count"] = count
                 row["total"] = group["item_count"]
                 exclude_rows.append(row)
+
+            if demo:
+                groups.append({
+                    "source": group["source"],
+                    "item_count": group["item_count"],
+                    "include_rows": include_rows,
+                    "exclude_rows": exclude_rows,
+                    "include_manual_field": None,
+                    "exclude_manual_field": None,
+                })
+                continue
 
             include_manual_name = f"{SOURCE_INCLUDE_MANUAL_PREFIX}{source_key}"
             exclude_manual_name = f"{SOURCE_EXCLUDE_MANUAL_PREFIX}{source_key}"
@@ -1360,6 +1438,14 @@ def apply_bulk_edit(item_ids, cleaned_data):
     for pk in item_ids:
         item = items_by_pk.get(pk)
         if item is None:
+            continue
+        if is_protected(item):
+            results.append({
+                "item": item,
+                "success": False,
+                "skipped": True,
+                "error": "Skipped: protected demo item",
+            })
             continue
         try:
             with transaction.atomic():

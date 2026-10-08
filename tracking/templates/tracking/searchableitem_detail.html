@@ -1,4 +1,5 @@
 {% extends "tracking/base.html" %}
+{% load demo_tags %}
 
 {% block title %}History for {{ item.text }}{% endblock %}
 
@@ -39,7 +40,7 @@
         </div>
         <div class="d-flex flex-wrap gap-2">
             <a href="{% url 'view_terms' %}" class="btn btn-outline-secondary btn-sm">Back to Items</a>
-            <a href="{% url 'edit_term' item.pk %}" class="btn btn-primary btn-sm">Edit Item</a>
+            {% if not item|demo_protected %}<a href="{% url 'edit_term' item.pk %}" class="btn btn-primary btn-sm">Edit Item</a>{% endif %}
             <a href="{% url 'item_sources' item.pk %}" class="btn btn-outline-primary btn-sm">Manage Sources</a>
             <a href="{% url 'export_item_csv' item.pk %}" class="btn btn-outline-success btn-sm">Export CSV</a>
             <a href="{% url 'export_item_json' item.pk %}" class="btn btn-outline-success btn-sm">Export JSON</a>
@@ -82,11 +83,13 @@
                                     {% if candidate.description %}
                                         <p class="card-text small flex-grow-1" style="white-space: pre-line;">{{ candidate.description }}</p>
                                     {% endif %}
+                                    {% if not item|demo_protected %}
                                     <form method="post" action="{% url 'metadata_select_candidate' item.pk %}">
                                         {% csrf_token %}
                                         <input type="hidden" name="external_id" value="{{ candidate.external_id }}">
                                         <button type="submit" class="btn btn-sm btn-primary">Select this match</button>
                                     </form>
+                                    {% endif %}
                                 </div>
                             </div>
                         </div>
@@ -108,7 +111,8 @@
                 <p class="text-muted small mb-0 mt-2">Metadata fetch may not be processed under current server settings — a separate <code>run_huey</code> process must be running.</p>
             {% endif %}
 
-            {% if item_metadata.status == "no_match" or item_metadata.status == "needs_review" %}
+            {% if item|demo_protected %}
+            {% elif item_metadata.status == "no_match" or item_metadata.status == "needs_review" %}
                 <hr>
                 <form method="post" action="{% url 'metadata_set_external_id' item.pk %}" class="row g-2 align-items-end">
                     {% csrf_token %}
@@ -122,7 +126,8 @@
                 </form>
             {% endif %}
 
-            {% if item_metadata.status == "error" or item_metadata.status == "no_match" %}
+            {% if item|demo_protected %}
+            {% elif item_metadata.status == "error" or item_metadata.status == "no_match" %}
                 <form method="post" action="{% url 'metadata_retry' item.pk %}" class="mt-2">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-outline-warning btn-sm">Retry metadata fetch</button>
@@ -229,6 +234,7 @@
             }
             const pointStyles = series.point_styles || [];
             const pointBackgroundColors = pointStyles.map(function (style) {
+                // 'gap' entries have a null price (line break) and no visible point.
                 return style === 'hollow' ? hollowFill : 'rgba(52, 152, 219, 1)';
             });
             const pointBorderColors = pointStyles.map(function () {
@@ -237,8 +243,8 @@
             const pointBorderWidths = pointStyles.map(function (style) {
                 return style === 'hollow' ? 2 : 1;
             });
-            const pointRadii = pointStyles.map(function () {
-                return 4;
+            const pointRadii = pointStyles.map(function (style) {
+                return style === 'gap' ? 0 : 4;
             });
             new Chart(canvas.getContext('2d'), {
                 type: 'line',

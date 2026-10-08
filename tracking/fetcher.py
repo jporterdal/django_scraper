@@ -43,6 +43,9 @@ class Fetcher:
         user_agent=DEFAULT_USER_AGENT,
         max_response_bytes=None,
     ):
+        if getattr(settings, "DEMO_MODE", False):
+            # Fail closed: demo mode never builds a real HTTP client (design D7).
+            raise RuntimeError("Fetcher is disabled in demo mode; use Fetcher.from_settings()")
         self.delay_seconds = delay_seconds
         self.jitter_seconds = jitter_seconds
         self.timeout = timeout
@@ -75,6 +78,10 @@ class Fetcher:
 
     @classmethod
     def from_settings(cls):
+        if getattr(settings, "DEMO_MODE", False):
+            from .demo.replay import ReplayFetcher
+
+            return ReplayFetcher()
         return cls(
             delay_seconds=getattr(settings, "SCRAPE_REQUEST_DELAY_SECONDS", 3.0),
             jitter_seconds=getattr(settings, "SCRAPE_REQUEST_DELAY_JITTER_SECONDS", 1.0),

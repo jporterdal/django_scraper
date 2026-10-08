@@ -19,7 +19,7 @@ from huey import crontab
 from huey.contrib.djhuey import periodic_task, task
 
 from .locks import get_unit_lock, lock_ttl_for_eta, unit_lock_key
-from .metadata_providers import PROVIDERS as metadata_provider_registry
+from .metadata_providers import get_metadata_providers
 from .metadata_providers import ResolutionStatus
 from .models import (
     FetchJob,
@@ -379,7 +379,7 @@ def fetch_metadata(fetch_request_id):
     item_metadata, _ = ItemMetadata.objects.get_or_create(item=item)
 
     try:
-        provider_cls = metadata_provider_registry.get(item.metadata_provider_key)
+        provider_cls = get_metadata_providers().get(item.metadata_provider_key)
         if provider_cls is None:
             raise ValueError(
                 f"Unregistered metadata provider key: {item.metadata_provider_key!r}"

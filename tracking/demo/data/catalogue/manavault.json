@@ -1,0 +1,255 @@
+[
+  {
+    "id": "manavault-emberwake-phoenix-embers-of-aldoria",
+    "title": "Emberwake Phoenix",
+    "category": "Embers of Aldoria",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 4.68,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 3.98,
+        "instock": true
+      },
+      {
+        "condition": "Moderately Played",
+        "price": 3.28,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "manavault-thornvault-sentinel-verdant-bastion",
+    "title": "Thornvault Sentinel",
+    "category": "Verdant Bastion",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 2.34,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 1.99,
+        "instock": true
+      },
+      {
+        "condition": "Moderately Played",
+        "price": 1.64,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "manavault-gloomtide-archivist-tidebound-depths",
+    "title": "Gloomtide Archivist",
+    "category": "Tidebound Depths",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 12.9,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 10.96,
+        "instock": false
+      },
+      {
+        "condition": "Moderately Played",
+        "price": 9.03,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "manavault-gloomtide-archivist-token-tidebound-depths-tokens",
+    "title": "Gloomtide Archivist Token",
+    "category": "Tidebound Depths Tokens",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 0.36,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 0.31,
+        "instock": false
+      },
+      {
+        "condition": "Moderately Played",
+        "price": 0.25,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "manavault-sunforged-reliquary-dawnforge",
+    "title": "Sunforged Reliquary",
+    "category": "Dawnforge",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 19.71,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 16.75,
+        "instock": true
+      },
+      {
+        "condition": "Moderately Played",
+        "price": 13.8,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "manavault-sunforged-reliquary-timeless-relics",
+    "title": "Sunforged Reliquary",
+    "category": "Timeless Relics",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 9.88,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 8.4,
+        "instock": true
+      },
+      {
+        "condition": "Moderately Played",
+        "price": 6.92,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "manavault-cindermaw-tyrant-embers-of-aldoria",
+    "title": "Cindermaw Tyrant",
+    "category": "Embers of Aldoria",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 25.99,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 22.09,
+        "instock": true
+      },
+      {
+        "condition": "Moderately Played",
+        "price": 18.19,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "manavault-cindermaw-tyrant-foil-embers-of-aldoria",
+    "title": "Cindermaw Tyrant (Foil)",
+    "category": "Embers of Aldoria",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 63.96,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 54.37,
+        "instock": true
+      },
+      {
+        "condition": "Moderately Played",
+        "price": 44.77,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "manavault-vexing-starfall-tidebound-depths",
+    "title": "Vexing Starfall",
+    "category": "Tidebound Depths",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 1.82,
+        "instock": false
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 1.55,
+        "instock": true
+      },
+      {
+        "condition": "Moderately Played",
+        "price": 1.27,
+        "instock": false
+      }
+    ]
+  },
+  {
+    "id": "manavault-hollowbrook-seer-verdant-bastion",
+    "title": "Hollowbrook Seer",
+    "category": "Verdant Bastion",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 1.14,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 0.97,
+        "instock": true
+      },
+      {
+        "condition": "Moderately Played",
+        "price": 0.8,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "manavault-seer-of-hollowbrook-verdant-bastion",
+    "title": "Seer of Hollowbrook",
+    "category": "Verdant Bastion",
+    "product_line": "Magic: The Gathering",
+    "variants": [
+      {
+        "condition": "Near Mint",
+        "price": 0.31,
+        "instock": true
+      },
+      {
+        "condition": "Lightly Played",
+        "price": 0.27,
+        "instock": true
+      },
+      {
+        "condition": "Moderately Played",
+        "price": 0.25,
+        "instock": true
+      }
+    ]
+  }
+]

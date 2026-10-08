@@ -20,6 +20,15 @@ def request_metadata_refresh(item):
     ItemMetadata.objects.get_or_create(item=item)
     MetadataFetchRequest.objects.create(item=item)
 
+    from .demo import is_demo
+
+    if is_demo():
+        # Demo mode has no periodic consumer, and the demo provider is a
+        # local lookup, so drain inline instead of leaving it queued (D8).
+        from .tasks import drain_pending_metadata_fetch_requests
+
+        drain_pending_metadata_fetch_requests()
+
 
 def reset_item_metadata(item):
     """Clear fetched state back to ``unfetched`` (provider changed or cleared)."""

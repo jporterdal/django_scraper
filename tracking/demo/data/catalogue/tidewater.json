@@ -1,0 +1,158 @@
+[
+  {
+    "id": "tidewater-emberwake-phoenix-embers-of-aldoria",
+    "title": "Emberwake Phoenix",
+    "category": "Embers of Aldoria",
+    "product_line": "Magic the Gathering",
+    "variants": [
+      {
+        "condition": "",
+        "price": 4.37,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "tidewater-phoenix-of-the-emberwake-embers-of-aldoria",
+    "title": "Phoenix of the Emberwake",
+    "category": "Embers of Aldoria",
+    "product_line": "Magic the Gathering",
+    "variants": [
+      {
+        "condition": "",
+        "price": 0.58,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "tidewater-emberwake-phoenix-scorched-skies",
+    "title": "Emberwake Phoenix",
+    "category": "Scorched Skies",
+    "product_line": "Pokemon",
+    "variants": [
+      {
+        "condition": "",
+        "price": 3.1,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "tidewater-thornvault-sentinel-verdant-bastion",
+    "title": "Thornvault Sentinel",
+    "category": "Verdant Bastion",
+    "product_line": "Magic the Gathering",
+    "variants": [
+      {
+        "condition": "",
+        "price": 2.18,
+        "instock": false
+      }
+    ]
+  },
+  {
+    "id": "tidewater-thornvault-sentinel-showcase-verdant-bastion",
+    "title": "Thornvault Sentinel (Showcase)",
+    "category": "Verdant Bastion",
+    "product_line": "Magic the Gathering",
+    "variants": [
+      {
+        "condition": "",
+        "price": 7.57,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "tidewater-gloomtide-archivist-tidebound-depths",
+    "title": "Gloomtide Archivist",
+    "category": "Tidebound Depths",
+    "product_line": "Magic the Gathering",
+    "variants": [
+      {
+        "condition": "",
+        "price": 12.03,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "tidewater-gloomtide-archivist-token-tidebound-depths-tokens",
+    "title": "Gloomtide Archivist Token",
+    "category": "Tidebound Depths Tokens",
+    "product_line": "Magic the Gathering",
+    "variants": [
+      {
+        "condition": "",
+        "price": 0.34,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "tidewater-cindermaw-tyrant-embers-of-aldoria",
+    "title": "Cindermaw Tyrant",
+    "category": "Embers of Aldoria",
+    "product_line": "Magic the Gathering",
+    "variants": [
+      {
+        "condition": "",
+        "price": 24.24,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "tidewater-cindermaw-tyrant-deck-box-embers-of-aldoria",
+    "title": "Cindermaw Tyrant Deck Box",
+    "category": "Embers of Aldoria",
+    "product_line": "Accessories",
+    "variants": [
+      {
+        "condition": "",
+        "price": 14.54,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "tidewater-vexing-starfall-tidebound-depths",
+    "title": "Vexing Starfall",
+    "category": "Tidebound Depths",
+    "product_line": "Magic the Gathering",
+    "variants": [
+      {
+        "condition": "",
+        "price": 1.7,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "tidewater-starfall-herald-tidebound-depths",
+    "title": "Starfall Herald",
+    "category": "Tidebound Depths",
+    "product_line": "Magic the Gathering",
+    "variants": [
+      {
+        "condition": "",
+        "price": 0.44,
+        "instock": true
+      }
+    ]
+  },
+  {
+    "id": "tidewater-hollowbrook-seer-verdant-bastion",
+    "title": "Hollowbrook Seer",
+    "category": "Verdant Bastion",
+    "product_line": "Magic the Gathering",
+    "variants": [
+      {
+        "condition": "",
+        "price": 1.07,
+        "instock": false
+      }
+    ]
+  }
+]

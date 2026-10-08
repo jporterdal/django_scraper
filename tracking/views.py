@@ -3,8 +3,7 @@ from django.http import HttpResponse, JsonResponse
 from django.views.generic import DetailView, ListView
 from django.views.generic.edit import CreateView, DeleteView, UpdateView, View
 from django.urls import reverse
-from django.db.models import Count, F, OuterRef, Q, Subquery, Window
-from django.db.models.functions import RowNumber
+from django.db.models import Count, OuterRef, Subquery
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -23,9 +22,12 @@ from .forms import (
     apply_bulk_edit,
     create_items_from_bulk_add,
 )
+from .demo import is_demo
+from .demo import policy as demo_policy
+from .demo.protection import PROTECTED_MESSAGE, is_protected
 from .matching import result_matches_item_source
 from .metadata import get_item_metadata, request_metadata_refresh
-from .metadata_providers import PROVIDERS as metadata_provider_registry
+from .metadata_providers import get_metadata_providers
 from .models import (
     FetchJob,
     ItemMetadata,
@@ -63,6 +65,36 @@ def _safe_next_url(request, candidate=None):
         return candidate
     return None
 
+
+
+class DemoProtectedObjectMixin:
+    """Demo mode: refuse any request (view or write) aimed at protected seed data.
+
+    ``get_protected_target`` returns the seed-checkable object; refused
+    requests redirect with a message and never reach the form or delete logic.
+    """
+
+    def get_protected_target(self):
+        return self.get_object()
+
+    def get_protected_redirect_url(self, target):
+        return reverse("view_terms")
+
+    def dispatch(self, request, *args, **kwargs):
+        if is_demo():
+            target = self.get_protected_target()
+            if is_protected(target):
+                messages.warning(request, PROTECTED_MESSAGE)
+                return redirect(self.get_protected_redirect_url(target))
+        return super().dispatch(request, *args, **kwargs)
+
+
+def _refuse_protected_item(request, item):
+    """Redirect response for a metadata action on a protected item, else None."""
+    if is_protected(item):
+        messages.warning(request, PROTECTED_MESSAGE)
+        return redirect("item_detail", pk=item.pk)
+    return None
 
 
 # Create your views here.
@@ -175,155 +207,169 @@ def _format_fetch_job_note(job):
     )
 
 
-def _source_price_points(stored_by_update, source_jobs):
-    """Chronological price points for one source: stored, carry-forward, orphans.
+def _replay_source_series(item_source, rows, source_jobs):
+    """Chronological per-thread state replay for one ``(item, source)`` pair.
 
-    ``stored_by_update`` maps update_id → ``{"price", "timestamp", "kind": "stored"}``.
-    Returns a list of ``{"price", "timestamp", "kind"}`` oldest→newest. Shared by
-    list sparklines and the detail chart so point selection cannot drift.
+    ``rows`` is every ``SearchResult`` of the pair (in stock and out of stock,
+    ``update`` loaded); ``source_jobs`` its ``FetchJob``s (``webupdate``
+    loaded). A thread (one title) has as its current state its newest
+    *currently-matching* row of either stock status; rows failing
+    ``result_matches_item_source`` never become a thread's state. Within one
+    update and title an in-stock row beats an out-of-stock row, then cheapest,
+    then id. A title the vendor stops returning keeps its last state (see
+    design.md D5).
+
+    An update is evaluated when it stored a matching row or has a SUCCESS job
+    with ``result_count > 0``. Each evaluated update emits the minimum in-stock
+    price across all threads as of that update, or ``None`` (a gap) if none is
+    in stock. Leading gaps are dropped. ``kind`` is ``"solid"`` for the first
+    priced entry, the first after a gap, or a changed price; ``"hollow"`` for an
+    unchanged price; ``"gap"`` for ``None``.
+
+    Returns ``(points, final_winner)``: ``points`` is a list of
+    ``{"price", "timestamp", "kind"}`` oldest→newest and ``final_winner`` the
+    source's ``(price, title)`` Latest-price contribution, or ``None``. Shared
+    by Latest price, the detail chart and the list sparkline so they cannot drift.
     """
-    points_by_update = {}
-    carry_price = None
-    for job in sorted(source_jobs, key=lambda j: j.webupdate.timestamp):
-        update_id = job.webupdate_id
-        stored = stored_by_update.get(update_id)
-        if stored is not None:
-            carry_price = stored["price"]
-            points_by_update[update_id] = {
-                "price": stored["price"],
-                "timestamp": job.webupdate.timestamp,
-                "kind": "stored",
-            }
-        elif (
-            job.status == FetchJob.Status.SUCCESS
-            and job.result_count > 0
-            and job.stored_count == 0
-            and carry_price is not None
+    timestamps = {}
+    rows_by_update = defaultdict(lambda: defaultdict(list))
+    seen_titles = set()
+    matched_titles = set()
+    for row in rows:
+        seen_titles.add(row.title)
+        if item_source is not None and not result_matches_item_source(
+            row.title, row.category, row.product_line, item_source
         ):
-            points_by_update[update_id] = {
-                "price": carry_price,
-                "timestamp": job.webupdate.timestamp,
-                "kind": "unchanged",
-            }
+            continue
+        matched_titles.add(row.title)
+        timestamps[row.update_id] = row.update.timestamp
+        rows_by_update[row.update_id][row.title].append(row)
 
-    for update_id, stored in stored_by_update.items():
-        if update_id not in points_by_update:
-            points_by_update[update_id] = stored
+    evaluated = set(rows_by_update)
+    for job in source_jobs:
+        timestamps[job.webupdate_id] = job.webupdate.timestamp
+        if job.status == FetchJob.Status.SUCCESS and job.result_count > 0:
+            evaluated.add(job.webupdate_id)
 
-    return sorted(points_by_update.values(), key=lambda p: p["timestamp"])
+    for title in sorted(seen_titles - matched_titles):
+        logger.info(
+            "Retroactive match: item=%s source=%s title=%r exhausted thread "
+            "with no currently-matching result",
+            item_source.item_id, item_source.source_id, title,
+        )
+
+    def row_rank(row):
+        in_stock = bool(row.instock) and row.price is not None
+        return (0 if in_stock else 1, row.price if in_stock else 0, row.pk)
+
+    def lowest(state):
+        priced = [
+            row for row in state.values() if row.instock and row.price is not None
+        ]
+        return min(priced, key=lambda row: (row.price, row.title), default=None)
+
+    state = {}
+    points = []
+    previous_price = None
+    for update_id in sorted(timestamps, key=lambda uid: (timestamps[uid], uid)):
+        for title, candidates in rows_by_update.get(update_id, {}).items():
+            state[title] = min(candidates, key=row_rank)
+        if update_id not in evaluated:
+            continue
+        winner = lowest(state)
+        if winner is None:
+            if previous_price is None and not points:
+                continue
+            points.append(
+                {"price": None, "timestamp": timestamps[update_id], "kind": "gap"}
+            )
+            previous_price = None
+            continue
+        kind = "hollow" if winner.price == previous_price else "solid"
+        points.append(
+            {"price": winner.price, "timestamp": timestamps[update_id], "kind": kind}
+        )
+        previous_price = winner.price
+
+    final = lowest(state)
+    return points, (None if final is None else (final.price, final.title))
 
 
-def _resolve_latest_known_prices(items):
-    """Per-item Latest price, retroactively re-validated against current criteria.
+def _resolve_latest_known_prices_and_series(items):
+    """Replay every ``ItemSource`` of ``items``: Latest price plus per-pair series.
 
-    A source's results are independently deduplicated per distinct title
-    (``scrape.py``'s ``_dedupe_unit_candidates`` keys on ``(item, source,
-    title)``), so a single source can carry several concurrently-valid,
-    independently-timestamped title "threads" at once. Resolution is
-    two-level, in one windowed query (not one query per source or thread —
-    see retroactive-result-matching and design.md Decision 3):
+    One ``SearchResult`` query (both stock states), one ``ItemSource`` query and
+    one ``FetchJob`` query for all items, independent of item count.
 
-    - Per thread ``(item_id, source_id, title)``: walk that thread's in-stock
-      rows newest-first and take the first one that still matches the item's/
-      item-source's *current* relevance criteria. A thread with no
-      currently-matching row contributes nothing — this scoping (rather than
-      partitioning by ``(item_id, source_id)`` alone) is what prevents one
-      thread's fresh timestamp from shadowing a sibling thread's still-current,
-      untouched price.
-    - Per source: the minimum, cheapest-then-alphabetical-title, across that
-      source's thread winners.
-
-    Returns ``{item_id: (price, title, source_id)}`` for items with at least
-    one contributing source; cross-source ties resolve cheapest-then-source_id,
-    matching this view's previous SQL ordering.
+    Returns ``(latest_prices, series_by_pair)``: ``latest_prices`` is
+    ``{item_id: (price, title, source_id)}`` for items with at least one
+    contributing source (cross-source ties: cheapest, then ``source_id``);
+    ``series_by_pair`` is ``{(item_id, source_id): points}``.
     """
     item_ids = [item.pk for item in items]
     if not item_ids:
-        return {}
+        return {}, {}
 
-    ranked_results = (
-        SearchResult.objects.filter(item_id__in=item_ids, instock=1)
-        .annotate(
-            _thread_rank=Window(
-                expression=RowNumber(),
-                partition_by=[F("item_id"), F("source_id"), F("title")],
-                order_by=["-update__timestamp", "price", "title"],
-            )
-        )
-        .order_by("item_id", "source_id", "title", "_thread_rank")
-    )
+    rows_by_pair = defaultdict(list)
+    for row in (
+        SearchResult.objects.filter(item_id__in=item_ids)
+        .select_related("update")
+        .order_by("item_id", "source_id", "update__timestamp", "update_id", "id")
+    ):
+        rows_by_pair[(row.item_id, row.source_id)].append(row)
 
-    rows_by_thread = defaultdict(list)
-    for row in ranked_results:
-        rows_by_thread[(row.item_id, row.source_id, row.title)].append(row)
-
-    threads_by_pair = defaultdict(list)
-    for item_id, source_id, title in rows_by_thread:
-        threads_by_pair[(item_id, source_id)].append(title)
-
-    item_sources = ItemSource.objects.filter(item_id__in=item_ids).select_related(
-        "item", "source"
-    )
+    jobs_by_pair = defaultdict(list)
+    for job in FetchJob.objects.filter(item_id__in=item_ids).select_related(
+        "webupdate"
+    ):
+        jobs_by_pair[(job.item_id, job.source_id)].append(job)
 
     winners_by_item = defaultdict(list)
-    for item_source in item_sources:
+    series_by_pair = {}
+    for item_source in ItemSource.objects.filter(item_id__in=item_ids).select_related(
+        "item", "source"
+    ):
         pair = (item_source.item_id, item_source.source_id)
-        thread_winners = []
-        for title in threads_by_pair.get(pair, ()):
-            rows = rows_by_thread[(item_source.item_id, item_source.source_id, title)]
-            winner = next(
-                (
-                    row
-                    for row in rows
-                    if result_matches_item_source(
-                        row.title, row.category, row.product_line, item_source
-                    )
-                ),
-                None,
-            )
-            if winner is None:
-                logger.info(
-                    "Retroactive match: item=%s source=%s title=%r exhausted thread "
-                    "(%d rows) with no currently-matching result",
-                    item_source.item_id, item_source.source_id, title, len(rows),
-                )
-            else:
-                thread_winners.append(winner)
-
-        if thread_winners:
-            source_winner = min(thread_winners, key=lambda row: (row.price, row.title))
+        points, winner = _replay_source_series(
+            item_source, rows_by_pair.get(pair, ()), jobs_by_pair.get(pair, ())
+        )
+        series_by_pair[pair] = points
+        if winner is not None:
             winners_by_item[item_source.item_id].append(
-                (source_winner.price, item_source.source_id, source_winner.title)
+                (winner[0], item_source.source_id, winner[1])
             )
 
     latest_prices = {}
     for item_id, winners in winners_by_item.items():
         price, source_id, title = min(winners, key=lambda winner: (winner[0], winner[1]))
         latest_prices[item_id] = (price, title, source_id)
-    return latest_prices
+    return latest_prices, series_by_pair
 
 
-def _build_source_chart_series(item, results, fetch_jobs):
-    """Per-source chart points: solid for stored rows, hollow for unchanged fetches.
+def _resolve_latest_known_prices(items):
+    """Per-item Latest price: ``{item_id: (price, title, source_id)}``.
 
-    Skips any row whose ``matches`` flag is False — a row that no longer
-    satisfies the item's/item-source's *current* relevance criteria (see
-    retroactive-result-matching) still appears in the raw results table, but
-    is excluded from the price-history chart it feeds.
+    Each source's contribution is the final state of its per-thread replay
+    (see ``_replay_source_series``): a thread out of stock contributes nothing
+    instead of falling back to an older in-stock row. A title the vendor stops
+    returning at all keeps its last state (design.md D5).
     """
-    stored_by_source_update = defaultdict(dict)
+    return _resolve_latest_known_prices_and_series(items)[0]
+
+
+def _build_source_chart_series(item, results, fetch_jobs, item_sources):
+    """Per-source chart points from the shared thread-state replay.
+
+    Solid points mark a changed lowest price, hollow points an unchanged one,
+    and an out-of-stock period is a ``null`` price (a line break). Rows that no
+    longer satisfy the item-source's *current* relevance criteria (see
+    retroactive-result-matching) are ignored by the replay.
+    """
+    item_source_by_source = {isrc.source_id: isrc for isrc in item_sources}
+
+    rows_by_source = defaultdict(list)
     for result in results:
-        if not result.matches:
-            continue
-        if not result.instock or result.price is None:
-            continue
-        existing = stored_by_source_update[result.source_id].get(result.update_id)
-        if existing is None or result.price < existing["price"]:
-            stored_by_source_update[result.source_id][result.update_id] = {
-                "price": result.price,
-                "timestamp": result.update.timestamp,
-                "kind": "stored",
-            }
+        rows_by_source[result.source_id].append(result)
 
     jobs_by_source = defaultdict(list)
     for job in fetch_jobs:
@@ -334,7 +380,7 @@ def _build_source_chart_series(item, results, fetch_jobs):
     source_fetch_notes = {}
 
     for source_id in sorted(
-        set(stored_by_source_update) | set(jobs_by_source),
+        set(rows_by_source) | set(jobs_by_source),
         key=lambda sid: (
             jobs_by_source[sid][0].source.key
             if sid in jobs_by_source
@@ -353,20 +399,14 @@ def _build_source_chart_series(item, results, fetch_jobs):
             )
             source_fetch_notes[source_key] = _format_fetch_job_note(latest_job)
         else:
-            for result in results:
-                if result.source_id == source_id:
-                    source_key = result.source.key
-                    source_name = result.source.name
-                    break
-            if source_key is None:
-                continue
+            source_key = rows_by_source[source_id][0].source.key
+            source_name = rows_by_source[source_id][0].source.name
 
-        if not source_jobs and source_id not in stored_by_source_update:
-            continue
+        # No ItemSource link (e.g. since removed): nothing to re-validate against.
+        item_source = item_source_by_source.get(source_id)
 
-        points = _source_price_points(
-            stored_by_source_update.get(source_id, {}),
-            source_jobs,
+        points, _winner = _replay_source_series(
+            item_source, rows_by_source.get(source_id, []), source_jobs
         )
 
         labels = []
@@ -380,11 +420,12 @@ def _build_source_chart_series(item, results, fetch_jobs):
             )
             prices.append(point["price"])
             date_label = timezone.localtime(ts).strftime("%b %d")
-            if point["kind"] == "stored":
-                point_styles.append("solid")
+            point_styles.append(point["kind"])
+            if point["kind"] == "gap":
+                tooltips.append(f"{date_label} — out of stock")
+            elif point["kind"] == "solid":
                 tooltips.append(f"{date_label} — ${point['price']:.2f} (price changed)")
             else:
-                point_styles.append("hollow")
                 tooltips.append(
                     f"{date_label} — ${point['price']:.2f} (confirmed, unchanged)"
                 )
@@ -415,6 +456,16 @@ class SearchableCreateView(CreateView):
     def get_success_url(self):
         return reverse("view_terms")
 
+    def form_valid(self, form):
+        if is_demo() and demo_policy.visitor_item_limit_reached():
+            messages.error(
+                self.request,
+                f"The demo item limit ({settings.DEMO_MAX_VISITOR_ITEMS}) has been reached. "
+                "The sandbox resets after an hour of inactivity.",
+            )
+            return redirect("view_terms")
+        return super().form_valid(form)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["form_title"] = "Add New Search Term"
@@ -438,6 +489,15 @@ class BulkAddItemsView(View):
         form = BulkAddItemsForm(request.POST)
         formset = ItemSourceFormSet(request.POST)
         if form.is_valid() and formset.is_valid():
+            if is_demo() and demo_policy.visitor_item_limit_reached(
+                adding=len(form.cleaned_data["search_terms"])
+            ):
+                messages.error(
+                    request,
+                    f"Adding these would exceed the demo item limit "
+                    f"({settings.DEMO_MAX_VISITOR_ITEMS}); nothing was added.",
+                )
+                return self._render(request, form, formset)
             items = create_items_from_bulk_add(
                 terms=form.cleaned_data["search_terms"],
                 tag=form.cleaned_data["tag"],
@@ -556,7 +616,7 @@ class BulkEditItemsView(View):
         )
 
 
-class SearchableUpdateView(UpdateView):
+class SearchableUpdateView(DemoProtectedObjectMixin, UpdateView):
     model = SearchableItem
     form_class = SearchableItemForm
     template_name = "tracking/searchableitem_form.html"
@@ -579,76 +639,35 @@ class SearchableListView(ListView):
         context = super().get_context_data(**kwargs)
         object_list = list(context["object_list"])
 
-        latest_prices = _resolve_latest_known_prices(object_list)
+        latest_prices, series_by_pair = _resolve_latest_known_prices_and_series(
+            object_list
+        )
+        forjson = {}
         for item in object_list:
             price, title, source_id = latest_prices.get(item.pk, (None, None, None))
             item.latest_known_minprice = price
             item.latest_known_minprice_title = title
             item.latest_known_minprice_source = source_id
 
-        item_source_pairs = []
-        for item in object_list:
-            source_id = getattr(item, "latest_known_minprice_source", None)
+            history = []
             if source_id is not None:
-                item_source_pairs.append((item.pk, source_id))
-
-        forjson = {
-            item.pk: {"id": item.pk, "price_history": []} for item in object_list
-        }
-
-        if item_source_pairs:
-            pair_filter = Q()
-            for item_id, source_id in item_source_pairs:
-                pair_filter |= Q(item_id=item_id, source_id=source_id)
-
-            stored_by_item_source_update = defaultdict(dict)
-            for result in (
-                SearchResult.objects.filter(instock=1, price__isnull=False)
-                .filter(pair_filter)
-                .select_related("update")
-            ):
-                bucket = stored_by_item_source_update[
-                    (result.item_id, result.source_id)
-                ]
-                existing = bucket.get(result.update_id)
-                if existing is None or result.price < existing["price"]:
-                    bucket[result.update_id] = {
-                        "price": result.price,
-                        "timestamp": result.update.timestamp,
-                        "kind": "stored",
-                    }
-
-            jobs_by_item_source = defaultdict(list)
-            for job in (
-                FetchJob.objects.filter(pair_filter)
-                .select_related("webupdate")
-                .order_by("webupdate__timestamp", "id")
-            ):
-                jobs_by_item_source[(job.item_id, job.source_id)].append(job)
-
-            for item_id, source_id in item_source_pairs:
-                points = _source_price_points(
-                    stored_by_item_source_update.get((item_id, source_id), {}),
-                    jobs_by_item_source.get((item_id, source_id), []),
-                )
-                for point in points:
+                for point in series_by_pair.get((item.pk, source_id), ()):
                     ts = point["timestamp"]
-                    if ts:
-                        date_str = timezone.localtime(ts).strftime("%d/%m/%y")
-                    else:
-                        date_str = ""
-                    forjson[item_id]["price_history"].append(
+                    history.append(
                         {
                             "price": point["price"],
-                            "date": date_str,
+                            "date": timezone.localtime(ts).strftime("%d/%m/%y")
+                            if ts
+                            else "",
                         }
                     )
+            forjson[item.pk] = {"id": item.pk, "price_history": history}
 
         for item in object_list:
             item.metadata_thumbnail_url = ""
             item_metadata = get_item_metadata(item)
             if item_metadata is not None and item_metadata.status == ItemMetadata.Status.MATCHED:
-                provider_cls = metadata_provider_registry.get(item.metadata_provider_key)
+                provider_cls = get_metadata_providers().get(item.metadata_provider_key)
                 if provider_cls is not None:
                     display = provider_cls().to_display(item_metadata.payload)
                     item.metadata_thumbnail_url = display.get("thumbnail_url", "")
@@ -703,7 +722,8 @@ class SearchableListView(ListView):
 class SearchableItemDetailView(DetailView):
     # Phase 2 Step 6 — item detail / history page: a table of ALL stored
     # SearchResult rows for the item plus a per-source Chart.js price-history
-    # line chart (lowest in-stock price per WebUpdate).
+    # line chart (lowest in-stock price across the source's title threads as of each
+    # WebUpdate, via _replay_source_series).
     model = SearchableItem
     template_name = "tracking/searchableitem_detail.html"
     context_object_name = "item"
@@ -737,7 +757,7 @@ class SearchableItemDetailView(DetailView):
         )
 
         chart_data, chart_sources, source_fetch_notes = _build_source_chart_series(
-            item, results, fetch_jobs
+            item, results, fetch_jobs, item_sources
         )
 
         context["results"] = results
@@ -755,12 +775,13 @@ class SearchableItemDetailView(DetailView):
         # live `run_huey` consumer process, which this request-serving
         # process has no way to confirm is actually running.
         context["metadata_fetch_may_not_process"] = (
-            item_metadata is not None
+            not is_demo()
+            and item_metadata is not None
             and item_metadata.status in (ItemMetadata.Status.UNFETCHED, ItemMetadata.Status.PENDING)
             and schedules_may_not_fire()
         )
         if item_metadata is not None:
-            provider_cls = metadata_provider_registry.get(item.metadata_provider_key)
+            provider_cls = get_metadata_providers().get(item.metadata_provider_key)
             if provider_cls is not None:
                 provider = provider_cls()
                 if item_metadata.status == ItemMetadata.Status.MATCHED:
@@ -782,6 +803,9 @@ class MetadataRetryView(View):
 
     def post(self, request, pk):
         item = get_object_or_404(SearchableItem, pk=pk)
+        refused = _refuse_protected_item(request, item)
+        if refused:
+            return refused
         request_metadata_refresh(item)
         messages.success(request, "Metadata refresh requested.")
         return redirect("item_detail", pk=item.pk)
@@ -797,6 +821,9 @@ class MetadataSelectCandidateView(View):
 
     def post(self, request, pk):
         item = get_object_or_404(SearchableItem, pk=pk)
+        refused = _refuse_protected_item(request, item)
+        if refused:
+            return refused
         external_id = request.POST.get("external_id", "")
         item_metadata = get_object_or_404(ItemMetadata, item=item)
         candidates = (item_metadata.payload or {}).get("candidates", [])
@@ -824,6 +851,9 @@ class MetadataSetExternalIdView(View):
 
     def post(self, request, pk):
         item = get_object_or_404(SearchableItem, pk=pk)
+        refused = _refuse_protected_item(request, item)
+        if refused:
+            return refused
         external_id = (request.POST.get("external_id") or "").strip()
         if not external_id:
             messages.error(request, "Enter an external identifier.")
@@ -850,6 +880,15 @@ class TagCreateView(CreateView):
     model = Tag
     fields = ["name", "color"]
     template_name = "tracking/tag_form.html"
+
+    def form_valid(self, form):
+        if is_demo() and demo_policy.visitor_tag_limit_reached():
+            messages.error(
+                self.request,
+                f"The demo tag limit ({settings.DEMO_MAX_VISITOR_TAGS}) has been reached.",
+            )
+            return redirect("view_tags")
+        return super().form_valid(form)
 
     def get_success_url(self):
         messages.success(self.request, f"Tag “{self.object.name}” created.")
@@ -885,10 +924,13 @@ class TagCreateView(CreateView):
         return form
 
 
-class TagUpdateView(UpdateView):
+class TagUpdateView(DemoProtectedObjectMixin, UpdateView):
     model = Tag
     fields = ["name", "color"]
     template_name = "tracking/tag_form.html"
+
+    def get_protected_redirect_url(self, target):
+        return reverse("view_tags")
 
     def get_success_url(self):
         messages.success(self.request, f"Tag “{self.object.name}” updated.")
@@ -912,10 +954,13 @@ class TagUpdateView(UpdateView):
         return form
 
 
-class TagDeleteView(DeleteView):
+class TagDeleteView(DemoProtectedObjectMixin, DeleteView):
     model = Tag
     template_name = "tracking/tag_confirm_delete.html"
     context_object_name = "tag"
+
+    def get_protected_redirect_url(self, target):
+        return reverse("view_tags")
 
     def get_success_url(self):
         messages.success(self.request, f"Tag “{self.object.name}” deleted.")
@@ -927,13 +972,16 @@ class TagDeleteView(DeleteView):
         return context
 
 
-class ItemSourceUpdateView(UpdateView):
+class ItemSourceUpdateView(DemoProtectedObjectMixin, UpdateView):
     # Phase 2 Step 5, Task 4 — minimal edit route so include/exclude patterns are
     # editable without the Django admin. Step 7 will add the full ItemSource
     # management UI (list/add/delete); it should reuse this shared ItemSourceForm.
     model = ItemSource
     form_class = ItemSourceForm
     template_name = "tracking/item_source_form.html"
+
+    def get_protected_redirect_url(self, target):
+        return reverse("item_sources", args=[target.item_id])
 
     def get_success_url(self):
         messages.success(self.request, "Item source updated.")
@@ -1027,10 +1075,16 @@ class ItemSourceListView(ListView):
         return context
 
 
-class ItemSourceCreateView(CreateView):
+class ItemSourceCreateView(DemoProtectedObjectMixin, CreateView):
     model = ItemSource
     form_class = ItemSourceForm
     template_name = "tracking/item_source_form.html"
+
+    def get_protected_target(self):
+        return get_object_or_404(SearchableItem, pk=self.kwargs["pk"])
+
+    def get_protected_redirect_url(self, target):
+        return reverse("item_sources", args=[target.pk])
 
     def dispatch(self, request, *args, **kwargs):
         self.item = get_object_or_404(SearchableItem, pk=self.kwargs["pk"])
@@ -1061,10 +1115,13 @@ class ItemSourceCreateView(CreateView):
         return context
 
 
-class ItemSourceDeleteView(DeleteView):
+class ItemSourceDeleteView(DemoProtectedObjectMixin, DeleteView):
     model = ItemSource
     template_name = "tracking/item_source_confirm_delete.html"
     context_object_name = "item_source"
+
+    def get_protected_redirect_url(self, target):
+        return reverse("item_sources", args=[target.item_id])
 
     def get_success_url(self):
         messages.success(self.request, "Item source removed.")
@@ -1132,6 +1189,24 @@ class UpdateFromWebView(View):
                 "Assign sources to active items first.",
             )
             return redirect("view_terms")
+
+        if is_demo():
+            if demo_policy.search_results_full():
+                messages.error(
+                    request,
+                    "The demo has stored as many results as it allows; updates are "
+                    "paused until the sandbox resets after an hour of inactivity.",
+                )
+                return redirect("view_terms")
+            claimed, wait_seconds = demo_policy.claim_update_slot()
+            if not claimed:
+                messages.warning(
+                    request,
+                    f"Demo updates run at most once every "
+                    f"{settings.DEMO_UPDATE_MIN_INTERVAL_SECONDS} seconds; "
+                    f"try again in {wait_seconds} second{'s' if wait_seconds != 1 else ''}.",
+                )
+                return redirect("view_terms")
 
         item_ids = None
         if items is not None:
@@ -1304,6 +1379,16 @@ def _item_export_rows(item):
     return rows
 
 
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
+
+
+def _csv_safe(value):
+    """Neutralize spreadsheet formula injection (demo visitors download each other's data)."""
+    if isinstance(value, str) and value.startswith(_CSV_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 def _export_filename(item, extension):
     return f"item-{item.pk}-price-history.{extension}"
 
@@ -1316,7 +1401,10 @@ def export_item_csv(request, pk):
     )
     writer = csv.DictWriter(response, fieldnames=EXPORT_FIELDNAMES)
     writer.writeheader()
+    demo = is_demo()
     for row in _item_export_rows(item):
+        if demo:
+            row = {key: _csv_safe(value) for key, value in row.items()}
         writer.writerow(row)
     return response
 

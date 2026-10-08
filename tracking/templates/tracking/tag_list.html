@@ -1,4 +1,5 @@
 {% extends "tracking/base.html" %}
+{% load demo_tags %}
 
 {% block title %}Manage Tags{% endblock %}
 
@@ -42,8 +43,12 @@
                                 <a href="{% url 'view_terms' %}?tag={{ tag.pk }}">{{ tag.item_count }}</a>
                             </td>
                             <td class="text-end">
+                                {% if tag|demo_protected %}
+                                <span class="text-muted small">Protected demo tag</span>
+                                {% else %}
                                 <a href="{% url 'edit_tag' tag.pk %}" class="btn btn-primary btn-sm me-1">Edit</a>
                                 <a href="{% url 'delete_tag' tag.pk %}" class="btn btn-outline-danger btn-sm">Delete</a>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}

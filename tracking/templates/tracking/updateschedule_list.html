@@ -8,7 +8,7 @@
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h4 class="mb-0">Schedules</h4>
-            <a href="{% url 'add_schedule' %}" class="btn btn-success btn-sm">Add Schedule</a>
+            {% if not demo_mode %}<a href="{% url 'add_schedule' %}" class="btn btn-success btn-sm">Add Schedule</a>{% else %}<span class="text-muted small">Example schedules (read-only)</span>{% endif %}
         </div>
         <div class="card-body">
             {% if schedules %}
@@ -56,8 +56,10 @@
                                 {% endif %}
                             </td>
                             <td class="text-end">
+                                {% if not demo_mode %}
                                 <a href="{% url 'edit_schedule' schedule.pk %}" class="btn btn-primary btn-sm me-1">Edit</a>
                                 <a href="{% url 'delete_schedule' schedule.pk %}" class="btn btn-outline-danger btn-sm">Delete</a>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}
@@ -67,7 +69,9 @@
             {% else %}
             <p class="text-muted {% if show_scheduler_warning %}mb-3{% else %}mb-0{% endif %}">No schedules yet. <a href="{% url 'add_schedule' %}">Add one</a> to run scrapes automatically.</p>
             {% endif %}
-            {% if show_scheduler_warning %}
+            {% if demo_mode %}
+            <p class="text-muted small mb-0">In the demo these schedules are shown for illustration and don't run; use "Update" on the item list instead.</p>
+            {% elif show_scheduler_warning %}
             <p class="text-muted small mb-0">Scheduled runs may not fire under current server settings.</p>
             {% endif %}
         </div>

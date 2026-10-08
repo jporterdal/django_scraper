@@ -159,3 +159,18 @@ class ScryfallProvider(MetadataProvider):
 PROVIDERS = {
     "scryfall": ScryfallProvider,
 }
+
+
+def get_metadata_providers():
+    """The provider registry in effect, read at call time.
+
+    Demo mode offers only the local-file demo provider, so no request can
+    reach an external metadata service (demo-replay-data spec).
+    """
+    from django.conf import settings
+
+    if getattr(settings, "DEMO_MODE", False):
+        from .demo.provider import DemoMetadataProvider
+
+        return {"demo": DemoMetadataProvider}
+    return PROVIDERS

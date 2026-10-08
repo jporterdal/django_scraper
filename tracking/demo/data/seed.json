@@ -1,0 +1,92 @@
+{
+  "user": {"username": "demo"},
+  "tags": [
+    {"pk": 1, "name": "Red deck", "color": "#c0392b"},
+    {"pk": 2, "name": "Watchlist", "color": "#2980b9"},
+    {"pk": 3, "name": "Trade binder", "color": "#8e44ad"}
+  ],
+  "items": [
+    {
+      "pk": 1,
+      "text": "Emberwake Phoenix",
+      "priority": 1,
+      "tags": [1, 2],
+      "metadata_external_id": "demo-emberwake-phoenix",
+      "expected_product_line": [
+        {"value": "Magic: The Gathering", "source": "dragonhoard"},
+        {"value": "Magic: The Gathering", "source": "manavault"},
+        {"value": "Magic the Gathering", "source": "tidewater"}
+      ],
+      "expected_category": [],
+      "sources": [
+        {"source": "dragonhoard", "include": [], "exclude": ["Playmat|Sleeves|Deck Box"]},
+        {"source": "manavault", "include": [], "exclude": []},
+        {"source": "tidewater", "include": [], "exclude": []}
+      ]
+    },
+    {
+      "pk": 2,
+      "text": "Thornvault Sentinel",
+      "priority": 2,
+      "tags": [3],
+      "metadata_external_id": "demo-thornvault-sentinel",
+      "expected_product_line": [],
+      "expected_category": [],
+      "sources": [
+        {"source": "dragonhoard", "include": [], "exclude": ["Showcase"]},
+        {"source": "tidewater", "include": [], "exclude": ["Showcase"]}
+      ]
+    },
+    {
+      "pk": 3,
+      "text": "Gloomtide Archivist",
+      "priority": 0,
+      "tags": [2],
+      "metadata_external_id": "demo-gloomtide-archivist",
+      "expected_product_line": [
+        {"value": "Magic", "source": null}
+      ],
+      "expected_category": [],
+      "sources": [
+        {"source": "manavault", "include": ["\\(Near Mint\\)"], "exclude": ["Token"]},
+        {"source": "tidewater", "include": [], "exclude": ["Token"]}
+      ]
+    },
+    {
+      "pk": 4,
+      "text": "Sunforged Reliquary",
+      "priority": 2,
+      "tags": [3],
+      "metadata_external_id": "demo-sunforged-reliquary",
+      "expected_product_line": [],
+      "expected_category": [
+        {"value": "Dawnforge", "source": null}
+      ],
+      "sources": [
+        {"source": "dragonhoard", "include": [], "exclude": []},
+        {"source": "manavault", "include": [], "exclude": []}
+      ]
+    },
+    {
+      "pk": 5,
+      "text": "Cindermaw Tyrant",
+      "priority": 0,
+      "tags": [1, 2],
+      "metadata_external_id": "demo-cindermaw-tyrant",
+      "expected_product_line": [
+        {"value": "Magic", "source": null}
+      ],
+      "expected_category": [],
+      "sources": [
+        {"source": "dragonhoard", "include": [], "exclude": ["Foil"]},
+        {"source": "manavault", "include": [], "exclude": ["Foil"]},
+        {"source": "tidewater", "include": [], "exclude": []}
+      ]
+    }
+  ],
+  "schedules": [
+    {"name": "Nightly price check", "frequency": "daily", "anchor_time": "02:00", "tag": null, "enabled": true},
+    {"name": "Watchlist hourly", "frequency": "hourly", "anchor_time": "00:15", "tag": 2, "enabled": true}
+  ],
+  "try_terms": ["Vexing Starfall", "Hollowbrook Seer"]
+}

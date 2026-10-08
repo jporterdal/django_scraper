@@ -57,14 +57,16 @@
                 <li class="nav-item">
                     <a class="nav-link" href="{% url 'view_updates' %}">Scrape History</a>
                 </li>
+                {% if not demo_mode %}
                 <li class="nav-item">
                     <a class="nav-link" href="/admin/">Admin</a>
                 </li>
+                {% endif %}
             </ul>
             <div class="d-flex align-items-center gap-2 ms-auto">
                 <button type="button" id="theme-toggle" class="btn btn-outline-secondary btn-sm"
                         aria-label="Switch to light mode">&#9728;</button>
-                {% if user.is_authenticated %}
+                {% if user.is_authenticated and not demo_mode %}
                 <form method="post" action="{% url 'logout' %}" class="d-inline">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-link nav-link p-0">Log out ({{ user.username }})</button>
@@ -76,6 +78,14 @@
 </nav>
 
 <main class="container py-4">
+    {% if demo_mode %}
+        <div class="alert alert-info small" role="status" id="demo-banner">
+            <strong>Demo sandbox.</strong> This is a shared demo: anyone visiting can add and edit items alongside you.
+            The data resets automatically after an hour of inactivity{% if demo_last_reset_at %} (last reset {{ demo_last_reset_at|timesince }} ago){% endif %}.
+            The five starter cards are protected and can't be changed, but you can run price updates on them.
+            {% if demo_try_terms %}Try adding: {{ demo_try_terms|join:", " }}.{% endif %}
+        </div>
+    {% endif %}
     {% if messages %}
         {% for message in messages %}
             <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags }}{% endif %} alert-dismissible fade show" role="alert">

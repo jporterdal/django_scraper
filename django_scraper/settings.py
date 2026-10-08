@@ -23,7 +23,12 @@ env = environ.Env(
 SITE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 environ.Env.read_env(os.path.join(SITE_ROOT, ".env"))
 
-DEBUG = env("DEBUG")
+# Public, no-login, resource-light demo deployment (see the "Demo mode" block
+# at the end of this file and the demo-mode capability spec). Read first so it
+# can force DEBUG off before anything below derives from DEBUG.
+DEMO_MODE = env.bool("DEMO_MODE", default=False)
+
+DEBUG = False if DEMO_MODE else env("DEBUG")
 SECRET_KEY = env.str("SECRET_KEY")
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS")
 # True only on the public deployment (behind a TLS-terminating proxy). Defaults
@@ -52,6 +57,13 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # Demo middleware is always installed and is a no-op unless DEMO_MODE, so
+    # tests can toggle demo mode with override_settings. Order matters: the
+    # reset runs before the demo user is attached, and both run before
+    # LoginRequiredMiddleware checks request.user.
+    'tracking.demo.middleware.DemoResetMiddleware',
+    'tracking.demo.middleware.DemoUserMiddleware',
+    'tracking.demo.middleware.DemoWriteAllowlistMiddleware',
     'django.contrib.auth.middleware.LoginRequiredMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -69,6 +81,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'tracking.demo.context_processors.demo',
             ],
         },
     },
@@ -248,3 +261,74 @@ LOGGING = {
 if DEBUG:
     LOGGING["loggers"]["tracking"]["handlers"].append("file")
     LOGGING["loggers"]["tracking"]["level"] = "DEBUG"
+
+
+# Demo mode
+# ---------
+# DEMO_* settings are only consulted when DEMO_MODE is true; the inert defaults
+# here exist so tests can enable demo mode with override_settings. Each is
+# overridable by an environment variable of the same name.
+#
+# Reset gating: a reset runs on the first request after the demo has been idle
+# for at least DEMO_RESET_IDLE_SECONDS *and* at least
+# DEMO_RESET_MIN_INTERVAL_SECONDS have passed since the last reset. Activity
+# is recorded at most once per DEMO_ACTIVITY_WRITE_INTERVAL_SECONDS, so an
+# eligible reset can lag by up to that interval.
+DEMO_RESET_IDLE_SECONDS = env.int("DEMO_RESET_IDLE_SECONDS", default=3600)
+DEMO_RESET_MIN_INTERVAL_SECONDS = env.int("DEMO_RESET_MIN_INTERVAL_SECONDS", default=3600)
+DEMO_ACTIVITY_WRITE_INTERVAL_SECONDS = env.int(
+    "DEMO_ACTIVITY_WRITE_INTERVAL_SECONDS", default=60
+)
+# Days of simulated daily price history generated for seed items on reset.
+DEMO_SEED_HISTORY_DAYS = env.int("DEMO_SEED_HISTORY_DAYS", default=28)
+# Visitor caps.
+DEMO_MAX_VISITOR_ITEMS = env.int("DEMO_MAX_VISITOR_ITEMS", default=25)
+DEMO_MAX_VISITOR_TAGS = env.int("DEMO_MAX_VISITOR_TAGS", default=10)
+DEMO_BULK_ADD_MAX_TERMS = env.int("DEMO_BULK_ADD_MAX_TERMS", default=10)
+DEMO_UPDATE_MIN_INTERVAL_SECONDS = env.int("DEMO_UPDATE_MIN_INTERVAL_SECONDS", default=30)
+DEMO_MAX_SEARCH_RESULTS = env.int("DEMO_MAX_SEARCH_RESULTS", default=20_000)
+# Local SQLite file used in demo mode (DATABASE_URL is ignored).
+DEMO_DATABASE_PATH = env.str("DEMO_DATABASE_PATH", default=str(BASE_DIR / "demo.sqlite3"))
+
+if DEMO_MODE:
+    # One process, no Redis, no worker: tasks run inline and the lock/budget
+    # stores fall back to their in-memory implementations.
+    REDIS_URL = ""
+    HUEY["immediate"] = True
+    HUEY["connection"] = {"url": ""}
+
+    # A local SQLite file regardless of DATABASE_URL. WAL lets readers keep a
+    # consistent snapshot while a reset writes; IMMEDIATE makes every atomic()
+    # block take the write lock at BEGIN (serializing concurrent resets); the
+    # busy timeout makes concurrent writers wait instead of erroring.
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": DEMO_DATABASE_PATH,
+            "OPTIONS": {
+                "init_command": "PRAGMA journal_mode=WAL;",
+                "transaction_mode": "IMMEDIATE",
+                "timeout": 20,
+            },
+        }
+    }
+
+    # Searches are served from local demo data, so there is nothing to pace.
+    SCRAPE_REQUEST_DELAY_SECONDS = 0.0
+    SCRAPE_REQUEST_DELAY_JITTER_SECONDS = 0.0
+    RATE_LIMIT_MIN_INTERVAL_SECONDS = 0.0
+
+    # No server-side session or message rows per visitor.
+    SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
+    MESSAGE_STORAGE = "django.contrib.messages.storage.cookie.CookieStorage"
+
+    # Bound every request body, which bounds every free-text field at once.
+    DATA_UPLOAD_MAX_MEMORY_SIZE = 64 * 1024
+    DATA_UPLOAD_MAX_NUMBER_FIELDS = 1000
+
+    # nginx runs as a separate service and can't read this container's
+    # staticfiles/, so gunicorn serves them (nginx can still cache).
+    MIDDLEWARE.insert(
+        MIDDLEWARE.index("django.middleware.security.SecurityMiddleware") + 1,
+        "whitenoise.middleware.WhiteNoiseMiddleware",
+    )

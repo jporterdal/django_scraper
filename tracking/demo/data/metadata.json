@@ -1,0 +1,82 @@
+[
+  {
+    "id": "demo-emberwake-phoenix",
+    "name": "Emberwake Phoenix",
+    "type_line": "Creature — Phoenix",
+    "text": "Flying, haste. When Emberwake Phoenix dies, return it to the battlefield at the beginning of the next end step if you control three or more Mountains.",
+    "set": "Embers of Aldoria",
+    "color": "#c0392b",
+    "motif": "flame",
+    "thumbnail": "tracking/demo/emberwake-phoenix.svg"
+  },
+  {
+    "id": "demo-thornvault-sentinel",
+    "name": "Thornvault Sentinel",
+    "type_line": "Artifact Creature — Golem",
+    "text": "Reach. Thornvault Sentinel gets +2/+2 as long as you control a Forest. Other creatures you control can't be the targets of spells your opponents control during your turn.",
+    "set": "Verdant Bastion",
+    "color": "#27ae60",
+    "motif": "shield",
+    "thumbnail": "tracking/demo/thornvault-sentinel.svg"
+  },
+  {
+    "id": "demo-thornvault-sentinel-showcase",
+    "name": "Thornvault Sentinel (Showcase)",
+    "type_line": "Artifact Creature — Golem",
+    "text": "Showcase frame. Reach. Thornvault Sentinel gets +2/+2 as long as you control a Forest.",
+    "set": "Verdant Bastion",
+    "color": "#1e8449",
+    "motif": "shield",
+    "thumbnail": "tracking/demo/thornvault-sentinel-showcase.svg"
+  },
+  {
+    "id": "demo-gloomtide-archivist",
+    "name": "Gloomtide Archivist",
+    "type_line": "Creature — Merfolk Wizard",
+    "text": "Whenever you draw your second card each turn, surveil 2. Instant and sorcery spells you cast cost {1} less to cast if a card left your graveyard this turn.",
+    "set": "Tidebound Depths",
+    "color": "#1f3a93",
+    "motif": "eye",
+    "thumbnail": "tracking/demo/gloomtide-archivist.svg"
+  },
+  {
+    "id": "demo-sunforged-reliquary",
+    "name": "Sunforged Reliquary",
+    "type_line": "Legendary Artifact",
+    "text": "{T}: Add one mana of any color. {3}, {T}: Exile target card from a graveyard. If it was a creature card, you gain 3 life.",
+    "set": "Dawnforge",
+    "color": "#b7950b",
+    "motif": "sun",
+    "thumbnail": "tracking/demo/sunforged-reliquary.svg"
+  },
+  {
+    "id": "demo-cindermaw-tyrant",
+    "name": "Cindermaw Tyrant",
+    "type_line": "Legendary Creature — Dragon",
+    "text": "Flying. Whenever Cindermaw Tyrant attacks, it deals 2 damage to each opponent and each creature they control with flying. Sacrifice a Dragon: Cindermaw Tyrant gains indestructible until end of turn.",
+    "set": "Embers of Aldoria",
+    "color": "#78281f",
+    "motif": "crown",
+    "thumbnail": "tracking/demo/cindermaw-tyrant.svg"
+  },
+  {
+    "id": "demo-vexing-starfall",
+    "name": "Vexing Starfall",
+    "type_line": "Instant",
+    "text": "Counter target spell unless its controller pays {3}. If that spell is countered this way, scry 2.",
+    "set": "Tidebound Depths",
+    "color": "#5b2c6f",
+    "motif": "star",
+    "thumbnail": "tracking/demo/vexing-starfall.svg"
+  },
+  {
+    "id": "demo-hollowbrook-seer",
+    "name": "Hollowbrook Seer",
+    "type_line": "Creature — Elf Druid",
+    "text": "{T}: Add {G}. When Hollowbrook Seer enters, look at the top three cards of your library and put one of them into your hand.",
+    "set": "Verdant Bastion",
+    "color": "#117a65",
+    "motif": "leaf",
+    "thumbnail": "tracking/demo/hollowbrook-seer.svg"
+  }
+]

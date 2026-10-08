@@ -1,4 +1,5 @@
 {% extends "tracking/base.html" %}
+{% load demo_tags %}
 
 {% block title %}Sources for {{ item.text }}{% endblock %}
 
@@ -12,7 +13,7 @@
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h4 class="mb-0">Linked Sources</h4>
-            <a href="{% url 'add_item_source' item.pk %}" class="btn btn-success btn-sm">Add Source</a>
+            {% if not item|demo_protected %}<a href="{% url 'add_item_source' item.pk %}" class="btn btn-success btn-sm">Add Source</a>{% endif %}
         </div>
         <div class="card-body">
             {% if item_sources %}
@@ -35,8 +36,10 @@
                             <td>{{ item_source.title_include_patterns|length }}</td>
                             <td>{{ item_source.title_exclude_patterns|length }}</td>
                             <td class="text-end">
+                                {% if not item|demo_protected %}
                                 <a href="{% url 'edit_item_source' item_source.pk %}" class="btn btn-primary btn-sm me-1">Edit</a>
                                 <a href="{% url 'delete_item_source' item_source.pk %}" class="btn btn-outline-danger btn-sm">Delete</a>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}
