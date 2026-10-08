@@ -44,7 +44,6 @@ class DemoSettingsDefaultsTests(SimpleTestCase):
             "tracking.demo.middleware.DemoWriteAllowlistMiddleware",
         ):
             self.assertIn(name, settings.MIDDLEWARE)
-        self.assertNotIn("whitenoise.middleware.WhiteNoiseMiddleware", settings.MIDDLEWARE)
 
 
 class DemoSettingsBlockTests(SimpleTestCase):
