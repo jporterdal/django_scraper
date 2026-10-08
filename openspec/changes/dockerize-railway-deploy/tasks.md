@@ -25,9 +25,9 @@
 
 ## 5. Production cutover (manual, operator)
 
-- [ ] 5.1 Take a Postgres backup and note the current web, worker and nginx deployment IDs. Verify: the backup exists in Railway, or a `pg_dump` file exists locally.
-- [ ] 5.2 Confirm `python manage.py makemigrations --check` reports no changes. Note whether `/static/admin/css/base.css` loads on the public domain today.
-- [ ] 5.3 Merge to the deployed branch. On the web service, use the Dockerfile builder and clear the start command. On the worker, set the start command to `python manage.py run_huey`. Verify: web logs show migrate as a no-op and gunicorn on 8000, and worker logs show the Huey consumer started.
-- [ ] 5.4 Check through the existing (still `ds-nginx`) nginx: login works, the item list loads, admin CSS loads, and a manual "Update Selected" run completes via the worker. Verify: all four pass, or roll back per the runbook.
-- [ ] 5.5 Repoint the nginx service to this repo with Root Directory `nginx/` and watch path `/nginx/**`, then deploy. Verify: the same four checks pass on the public domain.
-- [ ] 5.6 After a stable period, archive the `ds-nginx` repo on GitHub and remove the "ds-nginx" references from the docs. Verify: `grep -rn ds-nginx docs README.md` returns nothing.
+- [x] 5.1 Take a Postgres backup and note the current web, worker and nginx deployment IDs. Verify: the backup exists in Railway, or a `pg_dump` file exists locally.
+- [x] 5.2 Confirm `python manage.py makemigrations --check` reports no changes. Note whether `/static/admin/css/base.css` loads on the public domain today.
+- [x] 5.3 Merge to the deployed branch. On **both** the web and worker services, set the builder to Dockerfile. On the web service, clear the start command. On the worker, set the start command to `python manage.py run_huey`. Verify: both services' build logs show a Dockerfile build, web logs show migrate as a no-op and gunicorn on 8000, and worker logs show the Huey consumer started.
+- [x] 5.4 Check through the existing (still `ds-nginx`) nginx: login works, the item list loads, admin CSS loads, and a manual "Update Selected" run completes via the worker. Verify: all four pass, or roll back per the runbook.
+- [x] 5.5 Repoint the nginx service to this repo: set Root Directory to `/nginx` in Settings → Source, directly under the GitHub repo (not via `RAILWAY_DOCKERFILE_PATH`), leave Dockerfile Path empty, set watch path `/nginx/**`, then deploy. Check the build log shows `FROM nginx:alpine`. Verify: the same four checks pass on the public domain.
+- [x] 5.6 After a stable period, archive the `ds-nginx` repo on GitHub and remove the "ds-nginx" references from the docs. Verify: `grep -rn ds-nginx docs README.md` returns nothing.

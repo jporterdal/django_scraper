@@ -11,11 +11,13 @@ public domain ──▶ nginx ──▶ djangoscraper.railway.internal:8000 (web
 
 | Service | Source | Builds from | Start command | Public domain |
 |---------|--------|-------------|---------------|---------------|
-| nginx | this repo, Root Directory `nginx/`, watch path `/nginx/**` | `nginx/Dockerfile` | none (image default) | yes |
+| nginx | this repo, Root Directory `/nginx`, watch path `/nginx/**` | `nginx/Dockerfile` | none (image default) | yes |
 | web (`djangoscraper`) | this repo | root `Dockerfile` | **none** (image default: `migrate`, then gunicorn on 8000) | no |
 | worker | this repo | root `Dockerfile` | `python manage.py run_huey` | no |
 | Postgres, Redis | Railway databases | — | — | no |
 
+- **nginx's Root Directory is a service setting, not a variable.** In the nginx service's Settings, it sits in the **Source** section, directly under the connected GitHub repo, not with the Dockerfile settings in the Build section. Set it to `/nginx`, and leave the Dockerfile Path setting empty. Don't use `RAILWAY_DOCKERFILE_PATH` for this: it only picks a Dockerfile *file* and doesn't restrict the build to `nginx/`. With it, or with Dockerfile Path `/Dockerfile`, the nginx service builds the root (Django) Dockerfile and crashes on boot without `SECRET_KEY`. The build log should show `FROM nginx:alpine`.
+- **Web and worker both use the Dockerfile builder** (Settings → Build). Check that both build logs show `FROM python:3.13-slim`. A worker left on Railway's Python builder would still run `run_huey`, so the mismatch would go unnoticed.
 - **The web service name matters.** nginx proxies to `djangoscraper.railway.internal:8000` (`nginx/nginx.conf`), so renaming the web service breaks the proxy.
 - **The port is fixed at 8000.** The web image ignores Railway's `PORT` variable.
 - **Start commands run in exec form.** With a Dockerfile build, a dashboard start command replaces the image's command and runs without a shell, so `&&` and `$VARS` don't work in it. Leave the web start command empty. If you need more than one command, wrap them: `/bin/sh -c "first && exec second"`.
@@ -53,25 +55,16 @@ Worker from the same image: `docker run --rm ... django-scraper python manage.py
 
 nginx: `docker build nginx/`.
 
-## Cutover from the old setup (one-time)
-Before this change, web and worker were built by Railway's Python builder with dashboard start commands, and nginx was built from the separate `ds-nginx` repo. Downtime is acceptable. Postgres and Redis are never modified.
+## Checking a deploy
+- Web logs: "No migrations to apply." (or the migrations being applied), then gunicorn listening at `0.0.0.0:8000`.
+- Worker logs: "Huey consumer started".
+- Through the public domain: login works, the item list loads, admin pages are styled, and a manual "Update Selected" run completes.
 
-1. **Back up.** Take a Postgres backup in Railway (or `pg_dump "$DATABASE_URL" > backup.sql`). Note the current deployment IDs of web, worker and nginx so you can roll back.
-2. **Pre-checks.** `python manage.py makemigrations --check` should report no changes. Note whether `/static/admin/css/base.css` loads on the public domain today.
-3. **Cut over web and worker.** Merge to the deployed branch. On the **web** service, make sure the builder is Dockerfile and **clear the start command**. On the **worker**, set the start command to `python manage.py run_huey`. Deploy both.
-   - Web logs: "No migrations to apply.", then gunicorn listening at `0.0.0.0:8000`.
-   - Worker logs: "Huey consumer started".
-4. **Verify** through the public domain (nginx still on `ds-nginx`): login works, the item list loads, admin pages are styled, and a manual "Update Selected" run completes.
-5. **Cut over nginx.** In the nginx service, change the source repo from `ds-nginx` to this repo, set Root Directory `nginx/` and watch path `/nginx/**`, and deploy. Repeat the checks from step 4.
-6. **Clean up.** Once it has been stable for a while, archive the `ds-nginx` repo on GitHub.
-
-If nginx returns 502 after step 3, check that the web service is still named `djangoscraper` and is listening on 8000. If both are fine, the private network may be IPv6-only. Then set the web start command to `/bin/sh -c "python manage.py migrate --noinput && exec gunicorn --bind [::]:8000 --no-control-socket django_scraper.wsgi --error-logfile - --access-logfile -"`.
+If nginx returns 502, check that the web service is still named `djangoscraper` and is listening on 8000. If both are fine, the private network may be IPv6-only. Then set the web start command to `/bin/sh -c "python manage.py migrate --noinput && exec gunicorn --bind [::]:8000 --no-control-socket django_scraper.wsgi --error-logfile - --access-logfile -"`.
 
 ## Rollback
-The database isn't modified, so a rollback restores the previous state exactly:
-- In Railway, redeploy the service's previous deployment. If you are going back to the pre-Docker build, also restore the old start commands: `python manage.py migrate && gunicorn --bind 0.0.0.0:8000 django_scraper.wsgi --error-logfile - --access-logfile -` (web) and `python manage.py migrate && python manage.py run_huey` (worker).
-- Or revert the commit and redeploy.
-- nginx: point the service back at the `ds-nginx` repo (until it's archived).
+- In Railway, redeploy the service's previous deployment, or revert the commit and redeploy.
+- A rollback doesn't undo migrations that the newer deploy already applied. Before deploying a change with migrations, take a Postgres backup in Railway (or `pg_dump "$DATABASE_URL" > backup.sql`).
 
 ## Create superuser
 Use the Railway CLI (https://docs.railway.com/cli) to open a shell on the web service and run:
